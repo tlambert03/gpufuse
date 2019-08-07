@@ -2,7 +2,7 @@
 """
 import ctypes
 import warnings
-
+import os
 import numpy as np
 
 from .lib import LIB
@@ -53,8 +53,8 @@ def reg_3dgpu(
     tmx=None,
     reg_method=7,
     i_tmx=0,
-    FTOL=0.0001,
-    itLimit=3000,
+    ftol=0.0001,
+    reg_iters=3000,
     sub_background=True,
     device_num=0,
     nptrans=False,
@@ -82,10 +82,10 @@ def reg_3dgpu(
             2 - do translation registration based on phase information
             3 - do translation registration based on 2D max projections
                 (there is a bug with this option).
-        FTOL (float, optional): convergence threshold, defined as the difference
+        ftol (float, optional): convergence threshold, defined as the difference
                                 of the cost function. value from two adjacent iterations.
                                 Defaults to 0.0001.
-        itLimit (int, optional): maximum iteration number. Defaults to 3000.
+        reg_iters (int, optional): maximum iteration number. Defaults to 3000.
         sub_background (bool, optional): subject background before registration or not.
                                          Defaults to True.
         device_num (int, optional): the GPU device to be used, 0-based naming convention.
@@ -132,8 +132,8 @@ def reg_3dgpu(
         (ctypes.c_uint * 3)(*reversed(im_a.shape)),
         reg_method,
         i_tmx,
-        FTOL,
-        itLimit,
+        ftol,
+        reg_iters,
         int(sub_background),
         device_num,
         h_records,
@@ -218,3 +218,132 @@ def decon_dualview(
     if status > 0:
         warnings.warn("CUDA status not 0")
     return h_decon, list(decon_records)
+
+
+def fetch_pixelsize(folder):
+    out = (ctypes.c_float * 3)(0.1625, 0.1625, 1.0)
+    return out
+
+
+def fusion_dualview_batch(
+    spim_a_folder,
+    psf_a,
+    psf_b=None,
+    spim_b_folder=None,
+    psf_a_bp=None,
+    psf_b_bp=None,
+    out_path=None,
+    name_a="SPIMA_",
+    name_b="SPIMB_",
+    nstart=0,
+    nend=None,
+    ntest=0,
+    interval=1,
+    reg_mode=3,
+    rot_mode=0,
+    tmx_mode=0,
+    itmx=None,
+    ftol=0.0001,
+    reg_iters=3000,
+    iters=10,  # for deconvolution
+    device_num=0,
+    save_inter=False,
+    save_reg=[False, False],  # path A, path B
+    save_mips=[True, False, False],  # [Z, Y ,X]
+    save_3d_mips=[False, False],  # decon 3D mip [Y, X]
+    output_bit=16,
+):
+    if not 0 <= reg_mode <= 3:
+        raise ValueError("reg_mode must be between 0-3")
+    if not -1 <= rot_mode <= 1:
+        raise ValueError("rot_mode must be between -1 and 1")
+    if not 0 <= tmx_mode <= 3:
+        raise ValueError("tmx_mode must be between 0-3")
+    if output_bit not in (16, 32):
+        raise ValueError("output_bit must be either 16 or 32")
+
+    if spim_b_folder is None:
+        spim_b_folder = spim_a_folder.replace("SPIMA", "SPIMB")
+    if not os.path.isdir(spim_b_folder):
+        raise FileNotFoundError("spim_b_folder not found")
+
+    if psf_b is None:
+        psf_b = psf_a.replace("A", "B").replace("a", "b")
+    if not os.path.exists(psf_b):
+        raise FileNotFoundError("psf_b not found")
+
+    if not spim_a_folder.endswith(os.sep):
+        spim_a_folder += os.sep
+    if not spim_b_folder.endswith(os.sep):
+        spim_b_folder += os.sep
+
+    if out_path is None:
+        out_path = os.path.join(
+            os.path.dirname(os.path.dirname(spim_a_folder)), "result_"
+        )
+
+    tot_n = len(
+        [
+            x
+            for x in os.listdir(spim_a_folder)
+            if (x.endswith(".tif") or x.endswith(".tiff"))
+        ]
+    )
+    if nend is None:
+        nend = tot_n - 1
+    if nend > (tot_n - 1):
+        raise ValueError(
+            "nend is greater than the number of images in {}".format(spim_a_folder)
+        )
+
+    pixel_size1 = fetch_pixelsize(spim_a_folder)
+    pixel_size2 = fetch_pixelsize(spim_b_folder)
+
+    if tmx_mode != 1 or itmx is None:
+        itmx = np.eye(4)
+    itmx = (ctypes.c_float * 16)(*itmx.ravel())
+
+    saves = (ctypes.c_uint * 8)(save_inter, *save_reg, *save_mips, *save_3d_mips)
+    records = (ctypes.c_float * 22)(0)
+
+    if psf_a_bp and psf_b_bp and os.path.exists(psf_a_bp) and os.path.exists(psf_b_bp):
+        unmatched = True
+    else:
+        unmatched = False
+        psf_a_bp = psf_a
+        psf_b_bp = psf_b
+
+    LIB.fusion_dualview_batch(
+        out_path.encode(),
+        spim_a_folder.encode(),
+        spim_b_folder.encode(),
+        name_a.encode(),
+        name_b.encode(),
+        nstart,
+        nend,
+        interval,
+        ntest,
+        pixel_size1,
+        pixel_size2,
+        reg_mode,
+        rot_mode,
+        tmx_mode,
+        itmx,
+        ftol,
+        reg_iters,
+        psf_a.encode(),
+        psf_b.encode(),
+        iters,
+        device_num,
+        saves,
+        output_bit,
+        records,
+        unmatched,
+        psf_a_bp.encode(),
+        psf_b_bp.encode(),
+    )
+
+    if not len(os.listdir(out_path)):
+        os.removedirs(out_path)
+
+    return list(records), itmx

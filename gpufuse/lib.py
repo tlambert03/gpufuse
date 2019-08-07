@@ -19,7 +19,9 @@ elif PLAT == "linux":
     EXT = ".so"
 
 
-LIBFILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "bin", "libaim" + EXT)
+LIBFILE = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)), "bin", "libaim" + EXT
+)
 LIB = ctypes.CDLL(LIBFILE)
 
 LIB.gettifinfo.restype = ctypes.c_ushort
@@ -127,3 +129,107 @@ LIB.decon_dualview.argtypes = [
     # float *h_psf_bp2: unmatched back projector corresponding to h_psf2
     np.ctypeslib.ndpointer(ctypes.c_float, flags="C_CONTIGUOUS"),
 ]
+
+# 3D registration and joint RL deconvolution with GPU implementation,
+# compatible with unmatched back projector. Processing for time-sequence images
+# in batch mode and APIs set to be File I/O from disk.
+# 3D registration and joint RL deconvolution with GPU implementation,
+# compatible with unmatched back projector.
+LIB.fusion_dualview_batch.restype = ctypes.c_int
+LIB.fusion_dualview_batch.argtypes = [
+    # char *outFolder: directory which contains all output results
+    ctypes.c_char_p,
+    # char *inFolder1: directory for input image 1
+    #                  if inFolder1 = “1”, switch to multiple color processing;
+    ctypes.c_char_p,
+    # char *inFolder2: directory for input image 2
+    #                  if inFolder1 = “1”, set as main input folder (Fig 1)
+    ctypes.c_char_p,
+    # char *fileNamePrefix1: prefix of file names of image 1
+    ctypes.c_char_p,
+    # char *fileNamePrefix2: prefix of file names of image 2
+    ctypes.c_char_p,
+    # int imgNumStart: start time point
+    ctypes.c_int,
+    # int imgNumEnd: end time point
+    ctypes.c_int,
+    # int imgNumInterval: time point interval
+    ctypes.c_int,
+    # int imgNumTest: time point for test (used only if regMode = 1)
+    ctypes.c_int,
+    # float *pixelSize1: 3-element array to specify the pixel size (x, y, z) of image 1
+    (ctypes.c_float * 3),
+    # float *pixelSize2: 3-element array to specify the pixel size (x, y, z) of image 2
+    (ctypes.c_float * 3),
+    # int regMode: registration mode for batch processing:
+    #   0: no registration, but perform ration, interpolation and transformation
+    #      (based on initial matrix) on image 2;
+    #   1: one image only, use test time point images to do registration and apply
+    #      to all other time points
+    #   2: all images independently, do registration for all images independently
+    #   3: all images dependently, do registration for all images based on previous results
+    ctypes.c_int,
+    # int imRotation: rotate image 2 before registration
+    #   0: no rotation
+    #   1: 90deg rotation by y axis
+    #   -1: -90deg rotation by y axis
+    ctypes.c_int,
+    # int flagInitialTmx: how to initialize the registration matrix
+    #   0: default matrix
+    #   1: use input matrix
+    #   2: do translation registration based on phase information
+    #   3: do translation registration based on 2D max projections
+    ctypes.c_int,
+    # float *iTmx: initial transformation matrix (used only if flagInitialTmx = 1)
+    (ctypes.c_float * 16),
+    # float FTOL: convergence threshold, defined as the difference of the cost function
+    #             value from two adjacent iterations
+    ctypes.c_float,
+    # int itLimit: maximum iteration number
+    ctypes.c_int,
+    # char *filePSF1: forward projector 1 (PSF 1); should have isotropic pixel size
+    ctypes.c_char_p,
+    # char *filePSF2: forward projector 2 (PSF 2); should have isotropic pixel size
+    ctypes.c_char_p,
+    # int itNumForDecon: iteration number for deconvolution
+    ctypes.c_int,
+    # int deviceNum: the GPU device to be used, 0-based naming convention
+    ctypes.c_int,
+    # int *flagSaveInterFiles: 8-element array, save registered and max projection images
+    #                          (1=yes, 0=no)
+    #   [0]: Intermediate outputs
+    #   [1]: reg A
+    #   [2]: reg B
+    #   [3]- [5]: Decon max projections Z, Y, X
+    #   [6], [7]: Decon 3D max projections: Y, X
+    (ctypes.c_uint * 8),
+    # int bitPerSample: TIFF bit for deconvolution images
+    ctypes.c_int,
+    # float *records: 22-element array, records and feedbacks of the processing
+    #   [0]-[10]: corresponding to regRecords for registration
+    #   [11]-[20]: corresponding to deconRecords for deconvolution
+    #   [21]: total time cost.
+    (ctypes.c_float * 22),
+    # bool flagUnmatch: use traditional back projectors or unmatched back projectors
+    #   0: traditional
+    #   1: unmatched
+    ctypes.c_bool,
+    # char *filePSF_bp1: unmatched back projector corresponding to h_psf1
+    ctypes.c_char_p,
+    # char *filePSF_bp2: unmatched back projector correspoånding to h_psf2
+    ctypes.c_char_p,
+]
+
+# Fig 1.  Folder convention for organizing multicolor datasets when using
+# fusion_dualview_batch” function. The “xxx ( )” indicates the name for the folders.
+#
+# xxx (main folder)/
+# ├── xxx (color1)/
+# │   ├── SPIMA
+# │   └── SPIMB
+# ├── xxx (color2)/
+# │   ├── SPIMA
+# │   └── SPIMB
+# └── xxx (... colorn)/
+#     ├── SPIMA
+#     └── SPIMB
