@@ -253,6 +253,94 @@ def fusion_dualview_batch(
     save_3d_mips=[False, False],  # decon 3D mip [Y, X]
     output_bit=16,
 ):
+    """3D registration and joint RL deconvolution with GPU implementation.
+
+    Compatible with unmatched back projector. Processing for time-sequence images
+    in batch mode and APIs set to be File I/O from disk 3D registration and joint
+    RL deconvolution with GPU implementation, compatible with unmatched back projector.
+
+    Assumes folder structure as follows:
+
+        main_folder
+        ├── ch0/
+        │   ├── spim_a_folder/
+        │   │   ├── name_a_0.tif
+        │   │   ├── ...
+        │   │   └── name_a_n.tif
+        │   └── spim_b_folder/
+        │       ├── name_b_0.tif
+        │       ├── ...
+        │       └── name_b_n.tif
+        ├── ch1/
+        │   ├── spim_a_folder/
+        │   │   ├── name_a_0.tif
+        │   │   ├── ...
+        │   │   └── name_a_n.tif
+        │   └── spim_b_folder/
+        │       ├── name_b_0.tif
+        │       ├── ...
+        │       └── name_b_n.tif
+        └── ../
+
+    Args:
+        spim_a_folder (str): SPIMA folder path
+        psf_a (str): PSF filepath for SPIMA
+        psf_b (str, optional): PSF filepath for SPIMB.
+                               Defaults to psf_a.replace("A", "B")
+        spim_b_folder (str, optional): SPIMB folder path
+                                    Defaults to spim_a_folder.replace("SPIMA", "SPIMB")
+        psf_a_bp (str, optional): unmatched back projector corresponding to psf_a.
+                                     Defaults to psf_a
+        psf_b_bp (str, optional): unmatched back projector corresponding to psf_b.
+                                     Defaults to psf_b
+        out_path (str, optional): Defaults to "results_".
+        name_a (str, optional): name of SPIMA folders. Defaults to "SPIMA_".
+        name_b (str, optional): name of SPIMB folders. Defaults to "SPIMB_".
+        nstart (int, optional): start time point. Defaults to 0.
+        nend ([type], optional): end time point. Defaults to last time point.
+        ntest (int, optional): test time point. Defaults to 0. only used if reg_mode=1
+        interval (int, optional): Time interval. Defaults to 1.
+        reg_mode (int, optional): Registration Mode. Defaults to 3.
+            0: no registration, but perform ration, interpolation and transformation
+               (based on initial matrix) on image 2;
+            1: one image only, use test time point images to do registration and apply
+               to all other time points
+            2: all images independently, do registration for all images independently
+            3: all images dependently, do registration for all images based on previous
+               results
+        rot_mode (int, optional):rotate image 2 before registration. Defaults to 0.
+            0: no rotation
+            1: 90deg rotation by y axis
+            -1: -90deg rotation by y axis
+        tmx_mode (int, optional): how to initialize the registration matrix. Defaults to 0.
+            0: default matrix
+            1: use input matrix
+            2: do translation registration based on phase information
+            3: do translation registration based on 2D max projections
+        itmx (np.ndarray, optional): initial transformation matrix .
+                                     (used only if flagInitialTmx = 1)
+                                     Defaults to np.eye(4).
+        ftol (float, optional): convergence threshold, defined as the difference
+                                of the cost function. value from two adjacent iterations.
+                                Defaults to 0.0001.
+        reg_iters (int, optional): maximum iterations for registration. Defaults to 3000.
+        iters (int, optional): maximum iterations for deconvolution. Defaults to 10.
+        save_inter (bool, optional): save intermediate outputs. Defaults to False.
+        save_reg (list, optional): save registered images [reg A, reg B]
+                                   length = 2. Defaults to [False, False]
+        save_mips (list, optional): save max intensity projections in [Z, Y, X]
+                                    length = 3. Defaults to [True, False, False]
+        save_3d_mips (list, optional): save 3D rotation projections in [Y, X]
+                                       length = 2. Defaults to [False, False]
+        output_bit (int, optional): bitdepth of output files. Defaults to 16.
+
+    Raises:
+        ValueError: If any of the parameters fall outside of the acceptable range
+        FileNotFoundError: If provided filepaths are not found
+
+    Returns:
+        list: records and feedbacks of the processing
+    """
     if not 0 <= reg_mode <= 3:
         raise ValueError("reg_mode must be between 0-3")
     if not -1 <= rot_mode <= 1:
