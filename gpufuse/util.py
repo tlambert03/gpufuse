@@ -1,5 +1,9 @@
 """helper functions
 """
+import os
+
+import tifffile as tf
+
 from .func import decon_dualview, reg_3dgpu
 
 
@@ -10,9 +14,6 @@ def fuse(im_a, im_b, psf_a, psf_b, **kwargs):
 
 
 def fuse_file(imname, psfname):
-    import os
-    import tifffile as tf
-
     im_a = tf.imread(imname)
     im_b = tf.imread(imname.replace("A_", "B_"))
     psf_a = tf.imread(psfname)
