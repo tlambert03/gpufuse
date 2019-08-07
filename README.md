@@ -1,5 +1,5 @@
 # gpufuse
-python wrapper for Min Guo's CUDA-based dual-view RL fusion 
+Python wrapper for Min Guo's CUDA-based dual-view RL fusion 
 
 ```python
 
@@ -20,3 +20,7 @@ deconvolved, record = gpufuse.decon_dualview(im_a, reg_b, psf_a, psf_b)
 deconvolved, reg_b = gpufuse.fuse(im_a, im_b, psf_a, psf_b)
 
 ```
+
+## Requirements
+
+This package assumes you have a CUDA-capable GPU, have installed the CUDA runtime libraries, and have cudart/cufft available in your library path.
