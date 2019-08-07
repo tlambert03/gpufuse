@@ -19,7 +19,7 @@ elif PLAT == "linux":
     EXT = ".so"
 
 
-LIBFILE = os.path.join(os.path.dirname(__file__), "bin", "libaim" + EXT)
+LIBFILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "bin", "libaim" + EXT)
 LIB = ctypes.CDLL(LIBFILE)
 
 LIB.gettifinfo.restype = ctypes.c_ushort
