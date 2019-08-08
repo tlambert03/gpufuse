@@ -372,7 +372,7 @@ def decon_singleview(im, psf, psf_bp=None, iters=10, device_num=0, gpu_mem_mode=
 
 def fetch_pixelsize(folder):
     # TODO: detect pixel size from metadata
-    out = (ctypes.c_float * 3)(0.1625, 0.1625, 1.0)
+    out = (ctypes.c_float * 3)(0.1625, 0.1625, 0.1625)
     return out
 
 
