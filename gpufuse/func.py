@@ -371,6 +371,7 @@ def decon_singleview(im, psf, psf_bp=None, iters=10, device_num=0, gpu_mem_mode=
 
 
 def fetch_pixelsize(folder):
+    # TODO: detect pixel size from metadata
     out = (ctypes.c_float * 3)(0.1625, 0.1625, 1.0)
     return out
 
@@ -506,7 +507,8 @@ def fusion_dualview_batch(
         raise FileNotFoundError("spim_b_folder not found")
 
     if psf_b is None:
-        psf_b = psf_a.replace("A", "B").replace("a", "b")
+        psf_b = psf_a.replace("A.tif", "B.tif")
+
     if not os.path.exists(psf_b):
         raise FileNotFoundError("psf_b not found")
 
