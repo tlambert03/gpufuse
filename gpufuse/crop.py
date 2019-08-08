@@ -1,16 +1,17 @@
 import json
 import logging
 import os
-import warnings
 from glob import glob
+from multiprocessing.pool import Pool
 
 import matplotlib.pyplot as plt
 import numpy as np
 import tifffile as tf
-from matplotlib.widgets import RectangleSelector
+from matplotlib.widgets import Button, RectangleSelector
 from scipy.interpolate import interp1d
 from skimage.transform import resize
-from multiprocessing.pool import Pool
+
+from .filter import selectiveMedianFilter
 
 tifffile_logger = logging.getLogger("tifffile")
 tifffile_logger.setLevel(logging.ERROR)
@@ -18,101 +19,13 @@ tifffile_logger.setLevel(logging.ERROR)
 POSITIONS = {x: i for i, x in enumerate("xyz")}
 
 
-def determineThreshold(array, maxSamples=50000):
-    array = np.array(array)
-    elements = len(array)
-
-    if elements > maxSamples:  # subsample
-        step = round(elements / maxSamples)
-        array = array[0::step]
-        elements = len(array)
-
-    connectingline = np.linspace(array[0], array[-1], elements)
-    distances = np.abs(array - connectingline)
-    position = np.argmax(distances)
-
-    threshold = array[position]
-    if np.isnan(threshold):
-        threshold = 0
-    return threshold
-
-
-def selectiveMedianFilter(
-    stack,
-    backgroundValue=0,
-    medianRange=3,
-    verbose=False,
-    withMean=False,
-    deviationThreshold=None,
-):
-    """correct bad pixels on sCMOS camera.
-    based on MATLAB code by Philipp J. Keller,
-    HHMI/Janelia Research Campus, 2011-2014
-
-    """
-    from scipy.ndimage.filters import median_filter
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-
-        devProj = np.std(stack, 0, ddof=1)
-        devProjMedFiltered = median_filter(devProj, medianRange, mode="constant")
-        deviationDistances = np.abs(devProj - devProjMedFiltered)
-        deviationDistances[deviationDistances == np.inf] = 0
-        if deviationThreshold is None:
-            deviationThreshold = determineThreshold(
-                sorted(deviationDistances.flatten())
-            )
-
-        deviationMatrix = deviationDistances > deviationThreshold
-
-        if withMean:
-            meanProj = np.mean(stack, 0) - backgroundValue
-            meanProjMedFiltered = median_filter(meanProj, medianRange)
-            meanDistances = np.abs(meanProj - meanProjMedFiltered / meanProjMedFiltered)
-            meanDistances[meanDistances == np.inf] = 0
-            meanThreshold = determineThreshold(sorted(meanDistances.flatten()))
-
-            meanMatrix = meanDistances > meanThreshold
-
-            pixelMatrix = deviationMatrix | meanMatrix
-            pixelCorrection = [
-                deviationDistances,
-                deviationThreshold,
-                meanDistances,
-                meanThreshold,
-            ]
-        else:
-            pixelMatrix = deviationMatrix
-            pixelCorrection = [deviationDistances, deviationThreshold]
-
-        if verbose:
-            pixpercent = (
-                100 * np.sum(pixelMatrix.flatten()) / float(len(pixelMatrix.flatten()))
-            )
-            print(
-                "Bad pixels detected: {} {:0.2f}".format(
-                    np.sum(pixelMatrix.flatten()), pixpercent
-                )
-            )
-
-        dt = stack.dtype
-        out = np.zeros(stack.shape, dt)
-        # apply pixelMatrix to correct insensitive pixels
-        for z in range(stack.shape[0]):
-            frame = np.asarray(stack[z], "Float32")
-            filteredFrame = median_filter(frame, medianRange)
-            frame[pixelMatrix == 1] = filteredFrame[pixelMatrix == 1]
-            out[z] = np.asarray(frame, dt)
-
-        return out, pixelCorrection
-
-
 class Selection3D:
-    def __init__(self):
+    def __init__(self, coords=None):
         # keys are axis, values are array of (selector, axis_number) tuples
         self.selectors = []
         self.coords = {}
+        if coords is not None:
+            self.coords = {"x": coords[0], "y": coords[1], "z": coords[2]}
         self.linked_axes = []
         self.data_lim = [None, None, None]  # x, y, z Data Size
 
@@ -159,7 +72,7 @@ class Selection3D:
             width = np.abs(x1 - x2)
             height = np.abs(y1 - y2)
             for (myaxis, otheraxis, otherselector) in self.linked_axes:
-                if not myaxis in "xy":
+                if myaxis not in "xy":
                     continue
                 othermax = otherselector.data_lim[POSITIONS[otheraxis]]
                 if myaxis == "x":
@@ -224,7 +137,7 @@ def parse_dispim_meta(impath):
         # tifffile version > 2019.2.22
         if isinstance(meta, str):
             meta = tf.xml2dict(meta)["OME"]
-    im0 = meta["Image"][0]
+    im0 = meta["Image"][0] if isinstance(meta["Image"], list) else meta["Image"]
     out = {"channels": [], "nS": len(meta["Image"])}
     for x in "XYZCT":
         out["n" + x] = im0["Pixels"]["Size" + x]
@@ -240,7 +153,10 @@ def get_exp_meta(exp):
     dirs = sorted(
         [d for d in os.listdir(exp) if not (d.startswith(".") or d.startswith("_"))]
     )
-    im0 = sorted(glob(os.path.join(exp, dirs[0] + "/*.tif")))[0]
+    try:
+        im0 = sorted(glob(os.path.join(exp, dirs[0] + "/*.tif")))[0]
+    except IndexError:
+        raise FileNotFoundError("No tiff files found in {}".format(exp))
     meta = parse_dispim_meta(im0)
     meta["nT"] = len(dirs)
     meta["ind_a"] = [x for x, c in enumerate(meta["channels"]) if "RightCam" in c]
@@ -248,7 +164,7 @@ def get_exp_meta(exp):
     return meta
 
 
-def load_dispim_mips(exp, tind=[0, -1], pos=0):
+def load_dispim_mips(exp, tind=[0], pos=0):
     """Get 3D stacks for t=indices"""
     meta = get_exp_meta(exp)
 
@@ -259,8 +175,9 @@ def load_dispim_mips(exp, tind=[0, -1], pos=0):
             idx = meta["nT"] + t
 
         im0 = glob(os.path.join(exp, "**", "*{:04d}*Pos0*.tif".format(idx)))[0]
-        print("reading timepoint index {}".format(t))
+        print("reading timepoint index {}, pos {}".format(t, pos))
         data = tf.imread(im0, series=pos)
+
         patha = data[:, meta["ind_a"]]
         pathb = data[:, meta["ind_b"]]
         if data.ndim == 4:
@@ -293,7 +210,7 @@ def load_dispim_mips(exp, tind=[0, -1], pos=0):
     return patha, pathb
 
 
-def select_volume(patha, pathb, axial="zy", contrast=0.8):
+def select_volume(patha, pathb, initial_coords=None, contrast=0.8, controller=None):
     fig = plt.figure(figsize=(10, 10))
     ax1 = fig.add_subplot(2, 2, 1, adjustable="box")
     ax2 = fig.add_subplot(2, 2, 2, sharey=ax1)
@@ -307,16 +224,35 @@ def select_volume(patha, pathb, axial="zy", contrast=0.8):
     ax3.imshow(pathb[0], aspect="equal", vmax=pathb[0].max() * contrast, cmap="gray")
     ax4.imshow(pathb[2], aspect="equal", vmax=pathb[2].max() * contrast, cmap="gray")
     plt.tight_layout()
-    s1 = Selection3D()
+    s1 = Selection3D(coords=initial_coords[0] if initial_coords is not None else None)
+    s2 = Selection3D(coords=initial_coords[1] if initial_coords is not None else None)
     s1.add_selector(ax1, "xy")
     s1.add_selector(ax2, "zy")
-    s2 = Selection3D()
     s2.add_selector(ax3, "xy")
     s2.add_selector(ax4, "zy")
 
     s1.link_axis("x", "z", s2)
     s1.link_axis("y", "y", s2)
     s1.link_axis("z", "x", s2)
+    if initial_coords is not None:
+        s1.update(links=False)
+        s2.update(links=False)
+
+    if controller is not None:
+        axprev = plt.axes([0.86, 0.32, 0.1, 0.075])
+        axnext = plt.axes([0.86, 0.23, 0.1, 0.075])
+        askip = plt.axes([0.86, 0.14, 0.1, 0.075])
+        astop = plt.axes([0.86, 0.05, 0.1, 0.075])
+        bprev = Button(axprev, "Previous")
+        bprev.on_clicked(controller.prev)
+        bnext = Button(axnext, "Next")
+        bnext.on_clicked(controller.next)
+        askip = Button(askip, "Skip")
+        askip.on_clicked(controller.skip)
+        astop = Button(astop, "Stop")
+        astop.on_clicked(controller.stop)
+        fig.canvas.set_window_title('Position: {}'.format(controller.positions[controller.i]))
+
     plt.show(block=True)
     extent_a = [s1.coords["x"], s1.coords["y"], s1.coords["z"]]
     extent_b = [s2.coords["x"], s2.coords["y"], s2.coords["z"]]
@@ -325,18 +261,67 @@ def select_volume(patha, pathb, axial="zy", contrast=0.8):
     return extent_a, extent_b
 
 
-def prep_experiment(exp):
-    meta = get_exp_meta(exp)
+class Controller(object):
+    def __init__(self, positions):
+        self.positions = positions
+        self.i = 0
+        self.abort = False
+        self.skipped = False
+
+    def next(self, event):
+        self.i += 1
+        plt.close()
+
+    def prev(self, event):
+        self.i -= 1
+        if self.i < 0:
+            self.i = 0
+        plt.close()
+
+    def skip(self, event):
+        self.i += 1
+        self.skipped = True
+        plt.close()
+
+    def stop(self, event):
+        self.abort = True
+        plt.close()
+
+
+def prep_experiment(exp, positions=None):
+    try:
+        meta = get_exp_meta(exp)
+    except FileNotFoundError as e:
+        print(e)
+        return
     outdir = os.path.join(exp, "_jobs")
     os.makedirs(outdir, exist_ok=True)
-    for pos in range(meta["nS"]):
-        print("loading position {}".format(pos))
+
+    controller = Controller(positions or range(meta["nS"]))
+    while True:
         try:
-            mips = load_dispim_mips(exp, pos=pos)
-            ext_a, ext_b = select_volume(*mips)
-            with open(os.path.join(outdir, "pos{}.json".format(pos)), "w") as _file:
-                json.dump({"data": [exp, ext_a, ext_b, pos]}, _file)
+            p = controller.positions[controller.i]
         except IndexError:
+            break
+        print("loading position {}".format(p))
+        try:
+            mips = load_dispim_mips(exp, pos=p)
+            try:
+                with open(os.path.join(outdir, "pos{}.json".format(p)), "r") as _file:
+                    d = json.load(_file)["data"]
+                    initial_coords = [d[1], d[2]]
+            except Exception:
+                initial_coords = None
+            controller.skipped = False
+            ext_a, ext_b = select_volume(
+                *mips, initial_coords=initial_coords, controller=controller
+            )
+            if not controller.skipped:
+                with open(os.path.join(outdir, "pos{}.json".format(p)), "w") as _file:
+                    json.dump({"data": [exp, ext_a, ext_b, p]}, _file)
+        except IndexError:
+            break
+        if controller.abort:
             break
     return outdir
 
@@ -349,6 +334,7 @@ def crop_array(
     time,
     pos,
     outdir,
+    subfolders=True,
     background=100,
     kind="cubic",
     mfilter=False,
@@ -376,7 +362,13 @@ def crop_array(
     print("saving...")
     if out.ndim == 4:
         for c in range(out.shape[1]):
-            path = os.path.join(outdir, "ch{}".format(c), "StackA_{}.tif".format(time))
+            subf = os.path.join(outdir, "ch{}".format(c))
+            fname = "StackA_{}.tif".format(time)
+            if subfolders:
+                subf = os.path.join(subf, 'SPIMA')
+                os.makedirs(subf, exist_ok=True)
+                fname = "SPIMA_{}.tif".format(time)
+            path = os.path.join(subf, fname)
             imout = out[:, c, np.newaxis, :, :]
             if mfilter:
                 imout = selectiveMedianFilter(imout)[0]
@@ -404,7 +396,13 @@ def crop_array(
     print("saving...")
     if out.ndim == 4:
         for c in range(out.shape[1]):
-            path = os.path.join(outdir, "ch{}".format(c), "StackB_{}.tif".format(time))
+            subf = os.path.join(outdir, "ch{}".format(c))
+            fname = "StackB_{}.tif".format(time)
+            if subfolders:
+                subf = os.path.join(subf, 'SPIMB')
+                os.makedirs(subf, exist_ok=True)
+                fname = "SPIMB_{}.tif".format(time)
+            path = os.path.join(subf, fname)
             imout = out[:, c, np.newaxis, :, :]
             if mfilter:
                 imout = selectiveMedianFilter(imout)[0]
@@ -435,6 +433,8 @@ def execute(jobsdir):
         with open(js, "r") as f:
             d = json.load(f)["data"]
             jobs.extend(crop_all(*d))
+    if not jobs:
+        print("No .json jobs found in {}".format(jobsdir))
     p = Pool()
     p.map(starcrop, jobs)
 
