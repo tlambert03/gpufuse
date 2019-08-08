@@ -34,6 +34,22 @@ LIB.readtifstack.argtypes = [
     ctypes.c_uint * 3,
 ]
 
+LIB.reg_3dcpu.restype = ctypes.c_int
+LIB.reg_3dcpu.argtypes = [
+    np.ctypeslib.ndpointer(ctypes.c_float, flags="C_CONTIGUOUS"),  # float *h_reg
+    (ctypes.c_float * 16),  # float *iTmx
+    np.ctypeslib.ndpointer(ctypes.c_float, flags="C_CONTIGUOUS"),  # float *h_img1
+    np.ctypeslib.ndpointer(ctypes.c_float, flags="C_CONTIGUOUS"),  # float *h_img2
+    (ctypes.c_uint * 3),  # unsigned int *imSize1
+    (ctypes.c_uint * 3),  # unsigned int *imSize2
+    ctypes.c_int,  # int regMethod
+    ctypes.c_int,  # int inputTmx
+    ctypes.c_float,  # float FTOL
+    ctypes.c_int,  # int itLimit
+    ctypes.c_int,  # int subBgTrigger
+    (ctypes.c_float * 11),  # float *regRecords
+]
+
 LIB.reg_3dgpu.restype = ctypes.c_int
 LIB.reg_3dgpu.argtypes = [
     # h_reg: registered image, it is the same size with the target image h_img1;
@@ -87,6 +103,7 @@ LIB.reg_3dgpu.argtypes = [
     (ctypes.c_float * 11),
 ]
 
+
 LIB.decon_dualview.restype = ctypes.c_int
 LIB.decon_dualview.argtypes = [
     # float *h_decon: deconvolved image, it is the same size with the input image h_img1
@@ -129,6 +146,23 @@ LIB.decon_dualview.argtypes = [
     # float *h_psf_bp2: unmatched back projector corresponding to h_psf2
     np.ctypeslib.ndpointer(ctypes.c_float, flags="C_CONTIGUOUS"),
 ]
+
+
+LIB.decon_singleview.restype = ctypes.c_int
+LIB.decon_singleview.argtypes = [
+    np.ctypeslib.ndpointer(ctypes.c_float, flags="C_CONTIGUOUS"),  # float *h_decon
+    np.ctypeslib.ndpointer(ctypes.c_float, flags="C_CONTIGUOUS"),  # float *h_img
+    (ctypes.c_uint * 3),  # unsigned int *imSize
+    np.ctypeslib.ndpointer(ctypes.c_float, flags="C_CONTIGUOUS"),  # float *h_psf
+    (ctypes.c_uint * 3),  # unsigned int *psfSize
+    ctypes.c_int,  # int itNumForDecon
+    ctypes.c_int,  # int deviceNum
+    ctypes.c_int,  # int gpuMemMode
+    (ctypes.c_float * 10),  # float *deconRecord
+    ctypes.c_bool,  # bool flagUnmatch
+    np.ctypeslib.ndpointer(ctypes.c_float, flags="C_CONTIGUOUS"),  # float *h_psf_bp
+]
+
 
 # 3D registration and joint RL deconvolution with GPU implementation,
 # compatible with unmatched back projector. Processing for time-sequence images

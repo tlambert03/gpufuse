@@ -129,13 +129,108 @@ def reg_3dgpu(
         im_b.astype(np.float32),
         # reversed shape because numpy is ZYX, and c++ expects XYZ
         (ctypes.c_uint * 3)(*reversed(im_a.shape)),
-        (ctypes.c_uint * 3)(*reversed(im_a.shape)),
+        (ctypes.c_uint * 3)(*reversed(im_b.shape)),
         reg_method,
         i_tmx,
         ftol,
         reg_iters,
         int(sub_background),
         device_num,
+        h_records,
+    )
+    if status > 0:
+        warnings.warn("CUDA status not 0")
+    if nptrans:
+        h_reg_b = np.transpose(h_reg_b, (2, 1, 0))
+    return h_reg_b, list(tmx), list(h_records)
+
+
+# CURRENTLY SEGFAULT
+def reg_3dcpu(
+    im_a,
+    im_b,
+    tmx=None,
+    reg_method=7,
+    i_tmx=0,
+    ftol=0.0001,
+    reg_iters=3000,
+    sub_background=True,
+    nptrans=False,
+    **kwargs  # just here to catch extra keyward arguments from util.fuse
+):
+    """Register two 3D numpy arrays on CPU.
+
+    Args:
+        im_a (np.ndarray): target image
+        im_b (np.ndarray): source image, will be registered to target
+        tmx (np.ndarray, optional): Transformation matrix. Defaults to np.eye(4).
+        reg_method (int, optional): Registration Method. Defaults to 7. one of:
+            0 - no registration, transform image 2 based on input matrix
+            1 - translation only
+            2 - rigid body
+            3 - 7 degrees of freedom (translation, rotation,
+                scaling equally in 3 dimensions)
+            4 - 9 degrees of freedom (translation, rotation, scaling)
+            5 - 12 degrees of freedom
+            6 - rigid body first, then do 12 degrees of freedom
+            7 - 3 DOF --> 6 DOF --> 9 DOF --> 12 DOF
+        i_tmx (int, optional): input transformation matrix. Defaults to 0.
+            0 - use default initial matrix (h_img1 and h_img2 are aligned at center)
+            1 - use iTmx as initial matrix
+            2 - do translation registration based on phase information
+            3 - do translation registration based on 2D max projections
+                (there is a bug with this option).
+        ftol (float, optional): convergence threshold, defined as the difference
+                                of the cost function. value from two adjacent iterations.
+                                Defaults to 0.0001.
+        reg_iters (int, optional): maximum iteration number. Defaults to 3000.
+        sub_background (bool, optional): subject background before registration or not.
+                                         Defaults to True.
+        nptrans (bool, optional): [description]. Defaults to False.
+
+    Raises:
+        ValueError: If reg_method < 0 or > 7
+        ValueError: If i_tmx < 0 or > 3
+
+    Returns:
+        tuple: 3-tuple containing:
+
+            np.ndarray: the registered volume
+            list: the transformation matrix
+            list: 11-element array, records and feedbacks of the processing
+                  [0]-[3]:  initial GPU memory, after variables allocated, after
+                            processing, after variables released (all in MB)
+                  [4]-[6]:  initial cost function value, minimized cost function value,
+                            intermediate cost function value
+                  [7]-[10]: registration time (s), whole time (s), single sub iteration
+                            time (ms), total sub iterations
+    """
+    if not 0 <= reg_method <= 7:
+        raise ValueError("reg_method must be between 0-7")
+    if not 0 <= i_tmx <= 3:
+        raise ValueError("i_tmx must be between 0-3")
+    if nptrans:
+        im_a = np.ascontiguousarray(np.transpose(im_a, (2, 1, 0)), dtype=np.float32)
+        im_b = np.ascontiguousarray(np.transpose(im_b, (2, 1, 0)), dtype=np.float32)
+    h_reg_b = np.empty_like(im_a, dtype=np.float32)
+    if tmx is None:
+        tmx = np.eye(4)
+    tmx = (ctypes.c_float * 16)(*tmx.ravel())
+
+    h_records = (ctypes.c_float * 11)(0.0)
+    status = LIB.reg_3dcpu(
+        h_reg_b,
+        tmx,
+        im_a.astype(np.float32),
+        im_b.astype(np.float32),
+        # reversed shape because numpy is ZYX, and c++ expects XYZ
+        (ctypes.c_uint * 3)(*reversed(im_a.shape)),
+        (ctypes.c_uint * 3)(*reversed(im_b.shape)),
+        reg_method,
+        i_tmx,
+        ftol,
+        reg_iters,
+        int(sub_background),
         h_records,
     )
     if status > 0:
@@ -214,6 +309,61 @@ def decon_dualview(
         unmatched,
         psf_a_bp,
         psf_b_bp,
+    )
+    if status > 0:
+        warnings.warn("CUDA status not 0")
+    return h_decon, list(decon_records)
+
+
+def decon_singleview(im, psf, psf_bp=None, iters=10, device_num=0, gpu_mem_mode=0):
+    """3D Richardson-Lucy deconvolution with GPU implementation.
+    Compatible with unmatched back projector.
+
+    Args:
+        im (np.ndarray): input image
+        psf (np.ndarray): forward projector (PSF)
+        psf_bp (np.ndarray, optional): unmatched back projector corresponding to psf
+                                       Defaults to psf.
+        iters (int, optional): number of iterations in deconvolution. Defaults to 10.
+        device_num (int, optional): the GPU device to be used, 0-based naming convention.
+                                    Defaults to 0.
+        gpu_mem_mode (int, optional): the GPU memory mode. Defaults to 0.
+            0 - Automatically set memory mode based on calculations
+            1 - sufficient memory
+            2 - memory optimized
+
+    Returns:
+        tuple: 2-tuple containing:
+
+            np.ndarray: the fused & deconvolved result
+            list: 10-element array, records and feedbacks of the processing
+                [0]      the actual memory mode used;
+                [1]-[5]  initial GPU memory, after variables partially allocated,
+                         during processing, after processing, after variables released
+                         (all in MB)
+                [6]-[9]  initializing time, prepocessing time, decon time, total time
+    """
+    h_decon = np.empty_like(im, dtype=np.float32)
+    decon_records = (ctypes.c_float * 10)(0.0)
+    if not psf_bp or not isinstance(psf_bp, np.ndarray):
+        unmatched = False
+        psf_bp = psf
+    else:
+        unmatched = False
+
+    status = LIB.decon_singleview(
+        h_decon,
+        im.astype(np.float32),
+        # reversed shape because numpy is ZYX, and c++ expects XYZ
+        (ctypes.c_uint * 3)(*reversed(im.shape)),
+        psf.astype(np.float32),
+        (ctypes.c_uint * 3)(*reversed(psf.shape)),
+        iters,
+        device_num,
+        gpu_mem_mode,
+        decon_records,
+        unmatched,
+        psf_bp,
     )
     if status > 0:
         warnings.warn("CUDA status not 0")
