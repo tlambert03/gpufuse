@@ -1,3 +1,5 @@
 numpy
 tifffile>=2019.3.18
+matplotlib
 scikit-image
+scipy
