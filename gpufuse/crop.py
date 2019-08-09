@@ -424,17 +424,26 @@ def crop_all(exp, extent_a, extent_b, pos=0):
 
 
 def starcrop(args):
-    return crop_array(*args)
+    try:
+        return crop_array(*args)
+    except Exception:
+        print("Job failed: {}".format(args))
+        return None
 
 
-def execute(jobsdir):
+def execute(jobsdir, positions=None, timepoints=None):
     jobs = []
     for js in glob(os.path.join(jobsdir, "*.json")):
         with open(js, "r") as f:
             d = json.load(f)["data"]
+            if positions is not None:
+                if d[3] not in positions:
+                    continue
             jobs.extend(crop_all(*d))
     if not jobs:
         print("No .json jobs found in {}".format(jobsdir))
+    if timepoints is not None:
+        jobs = [j for j in jobs if j[4] in timepoints]
     p = Pool()
     p.map(starcrop, jobs)
 

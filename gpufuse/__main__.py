@@ -34,7 +34,7 @@ def crop(args):
         if not os.path.exists(jobsdir):
             jobsdir = input("Jobs not autodetected, enter directory: ")
         if os.path.exists(jobsdir):
-            gpufuse.execute(jobsdir)
+            gpufuse.execute(jobsdir, args.p, args.t)
         else:
             print("exiting")
     else:
@@ -80,10 +80,17 @@ parser_crop.add_argument(
 )
 parser_crop.add_argument(
     "-p",
-    metavar="pos",
+    metavar="positions",
     type=int,
     nargs="+",
     help="specific positions to process, sep by spaces",
+)
+parser_crop.add_argument(
+    "-t",
+    metavar="timepoints",
+    type=int,
+    nargs="+",
+    help="specific timepoints to process, sep by spaces",
 )
 
 parser_fuse.set_defaults(func=fuse)
