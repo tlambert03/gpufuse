@@ -251,7 +251,9 @@ def select_volume(patha, pathb, initial_coords=None, contrast=0.8, controller=No
         askip.on_clicked(controller.skip)
         astop = Button(astop, "Stop")
         astop.on_clicked(controller.stop)
-        fig.canvas.set_window_title('Position: {}'.format(controller.positions[controller.i]))
+        fig.canvas.set_window_title(
+            "Position: {}".format(controller.positions[controller.i])
+        )
 
     plt.show(block=True)
     extent_a = [s1.coords["x"], s1.coords["y"], s1.coords["z"]]
@@ -365,7 +367,7 @@ def crop_array(
             subf = os.path.join(outdir, "ch{}".format(c))
             fname = "StackA_{}.tif".format(time)
             if subfolders:
-                subf = os.path.join(subf, 'SPIMA')
+                subf = os.path.join(subf, "SPIMA")
                 os.makedirs(subf, exist_ok=True)
                 fname = "SPIMA_{}.tif".format(time)
             path = os.path.join(subf, fname)
@@ -399,7 +401,7 @@ def crop_array(
             subf = os.path.join(outdir, "ch{}".format(c))
             fname = "StackB_{}.tif".format(time)
             if subfolders:
-                subf = os.path.join(subf, 'SPIMB')
+                subf = os.path.join(subf, "SPIMB")
                 os.makedirs(subf, exist_ok=True)
                 fname = "SPIMB_{}.tif".format(time)
             path = os.path.join(subf, fname)
@@ -431,7 +433,7 @@ def starcrop(args):
         return None
 
 
-def execute(jobsdir, positions=None, timepoints=None):
+def gather_jobs(jobsdir, positions=None, timepoints=None):
     jobs = []
     for js in glob(os.path.join(jobsdir, "*.json")):
         with open(js, "r") as f:
@@ -444,6 +446,11 @@ def execute(jobsdir, positions=None, timepoints=None):
         print("No .json jobs found in {}".format(jobsdir))
     if timepoints is not None:
         jobs = [j for j in jobs if j[4] in timepoints]
+    return jobs
+
+
+def execute(jobsdir, positions=None, timepoints=None):
+    jobs = gather_jobs(jobsdir, positions, timepoints)
     p = Pool()
     p.map(starcrop, jobs)
 
