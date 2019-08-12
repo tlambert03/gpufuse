@@ -9,7 +9,9 @@ import numpy as np
 import tifffile as tf
 from matplotlib.widgets import Button, RectangleSelector
 from scipy.interpolate import interp1d
-from skimage.transform import resize
+
+# from skimage.transform import resize
+from .util import resize_axis
 
 from .filter import selectiveMedianFilter
 
@@ -17,6 +19,7 @@ tifffile_logger = logging.getLogger("tifffile")
 tifffile_logger.setLevel(logging.ERROR)
 
 POSITIONS = {x: i for i, x in enumerate("xyz")}
+JOBSDIR = "_jobs"
 
 
 class Selection3D:
@@ -197,12 +200,15 @@ def load_dispim_mips(exp, tind=[0], pos=0):
             mip_xz += np.stack(_mip_xz).astype("single")
             mip_zy += np.stack(_mip_zy).astype("single")
 
-    newshape = list(mip_zy.shape)
-    newshape[-1] = round(newshape[-1] * meta["dzRatio"])
-    mip_zyr = resize(mip_zy, newshape)
-    newshape = list(mip_xz.shape)
-    newshape[-2] = round(newshape[-2] * meta["dzRatio"])
-    mip_xzr = resize(mip_xz, newshape)
+    # newshape = list(mip_zy.shape)
+    # newshape[-1] = round(newshape[-1] * meta["dzRatio"])
+    # mip_zyr = skimage.transform.resize(mip_zy, newshape)
+    mip_zyr = resize_axis(mip_zy, round(mip_zy.shape[-1] * meta["dzRatio"]), axis=-1)
+    # newshape = list(mip_xz.shape)
+    # newshape[-2] = round(newshape[-2] * meta["dzRatio"])
+    # mip_xzr = skimage.transform.resize(mip_xz, newshape)
+    mip_xzr = resize_axis(mip_xz, round(mip_xz.shape[-2] * meta["dzRatio"]), axis=-2)
+
     patha, pathb = [None] * 3, [None] * 3
     patha[0], pathb[0] = mip_xy
     patha[1], pathb[1] = mip_xzr
@@ -296,7 +302,7 @@ def prep_experiment(exp, positions=None):
     except FileNotFoundError as e:
         print(e)
         return
-    outdir = os.path.join(exp, "_jobs")
+    outdir = os.path.join(exp, JOBSDIR)
     os.makedirs(outdir, exist_ok=True)
 
     controller = Controller(positions or range(meta["nS"]))
@@ -326,6 +332,44 @@ def prep_experiment(exp, positions=None):
         if controller.abort:
             break
     return outdir
+
+
+def crop_array_inmem(
+    exp, extent_a, extent_b, meta, time, pos, outdir, chan=0, background=100
+):
+    from gpufuse.func import fusion_dualview
+
+    im0 = glob(os.path.join(exp, "**", "*{:04d}*Pos0*.tif".format(time)))[0]
+    print(f"loading file {os.path.basename(im0)}, pos {pos}, t: {time}, c: {chan}")
+    maxn = meta["nC"] * meta["nZ"]
+    keys = list(range(meta["ind_a"][chan], maxn, meta["nC"]))
+    keys.extend(list(range(meta["ind_b"][chan], maxn, meta["nC"])))
+    keys.sort()
+    data = tf.imread(im0, series=pos, key=keys)
+    data = data.reshape((meta["nZ"], 2, -1, data.shape[-1]))
+    slc_a_x, slc_a_y, _slc_a_z = extent_a
+    slc_b_x, slc_b_y, slc_b_z = extent_b
+    # weird reversing is due to the way the slices were picked in select_volume()
+    slc_a_z = [None, None]
+    slc_a_z[0] = round((meta["dzRatio"] * meta["nZ"] - _slc_a_z[1]) / meta["dzRatio"])
+    slc_a_z[1] = round((meta["dzRatio"] * meta["nZ"] - _slc_a_z[0]) / meta["dzRatio"])
+    slc_b_z = [round(i / meta["dzRatio"]) for i in slc_b_z]
+    idx_a = 0 if meta["ind_a"][chan] < meta["ind_b"][chan] else 1
+    idx_b = 1 if idx_a == 0 else 0
+    im_a = data[slice(*slc_a_z), idx_a, slice(*slc_a_y), slice(*slc_a_x)].astype(
+        "single"
+    )
+    im_b = data[slice(*slc_b_z), idx_b, slice(*slc_b_y), slice(*slc_b_x)].astype(
+        "single"
+    )
+    im_a -= background
+    im_b -= background
+    im_a[im_a < 0] = 0
+    im_b[im_b < 0] = 0
+    decon = fusion_dualview(
+        im_a, im_b, pixel_size1=[meta["dX"], meta["dX"], meta["dZ"]], rot_mode=1
+    )[0]
+    return decon
 
 
 def crop_array(
@@ -435,24 +479,30 @@ def starcrop(args):
 
 def gather_jobs(jobsdir, positions=None, timepoints=None):
     jobs = []
-    for js in glob(os.path.join(jobsdir, "*.json")):
+    jfiles = glob(os.path.join(jobsdir, "*.json"))
+    if not jfiles:
+        jfiles = glob(os.path.join(jobsdir, JOBSDIR, "*.json"))
+    if not jfiles:
+        print("No .json jobs found in {}".format(jobsdir))
+        return jobs
+    for js in jfiles:
         with open(js, "r") as f:
             d = json.load(f)["data"]
             if positions is not None:
                 if d[3] not in positions:
                     continue
             jobs.extend(crop_all(*d))
-    if not jobs:
-        print("No .json jobs found in {}".format(jobsdir))
     if timepoints is not None:
         jobs = [j for j in jobs if j[4] in timepoints]
     return jobs
 
 
-def execute(jobsdir, positions=None, timepoints=None):
+def execute(jobsdir, positions=None, timepoints=None, client=None):
     jobs = gather_jobs(jobsdir, positions, timepoints)
-    p = Pool()
-    p.map(starcrop, jobs)
+    if client is None:
+        client = Pool()
+    assert hasattr(client, "map"), "provided client does not implement a map function"
+    return client.map(starcrop, jobs)
 
 
 def main(impath):
@@ -467,9 +517,14 @@ def main(impath):
     imA = im
     mipsAxy = imA.max(0)
     mipsAxz = np.rot90(imA, axes=(0, 1)).max(0)
-    mipsAxzr = resize(mipsAxz, ((mipsAxz.shape[0] * dZ) // dXY, mipsAxz.shape[1]))
+    # mipsAxzr = skimage.transform.resize(
+    #   mipsAxz, ((mipsAxz.shape[0] * dZ) // dXY, mipsAxz.shape[1]))
+    mipsAxzr = resize_axis(mipsAxz, (mipsAxz.shape[0] * dZ) // dXY, axis=0)
+
     mipsAyz = np.rot90(imA, axes=(0, 2)).max(0)
-    mipsAyzr = resize(mipsAyz, (mipsAyz.shape[0], (mipsAyz.shape[1] * dZ) // dXY))
+    # mipsAyzr = skimage.transform.resize(
+    #   mipsAyz, (mipsAyz.shape[0], (mipsAyz.shape[1] * dZ) // dXY))
+    mipsAyzr = resize_axis(mipsAyz, (mipsAyz.shape[1] * dZ) // dXY, axis=1)
 
     fig = plt.figure()
     ax1 = fig.add_subplot(2, 2, 1, adjustable="box", aspect="equal")
