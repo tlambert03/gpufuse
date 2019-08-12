@@ -244,7 +244,7 @@ def decon_dualview(
     im_a,
     im_b,
     psf_a,
-    psf_b,
+    psf_b=None,  # defaults to rotated psf_a
     psf_a_bp=None,
     psf_b_bp=None,
     iters=10,
@@ -287,6 +287,9 @@ def decon_dualview(
     """
     h_decon = np.empty_like(im_a, dtype=np.float32)
     decon_records = (ctypes.c_float * 10)(0.0)
+    if psf_b is None:
+        psf_b = np.ascontiguousarray(np.transpose(psf_a, (2, 1, 0)))
+
     if isinstance(psf_a_bp, np.ndarray) and isinstance(psf_b_bp, np.ndarray):
         unmatched = True
     else:
@@ -374,6 +377,94 @@ def fetch_pixelsize(folder):
     # TODO: detect pixel size from metadata
     out = (ctypes.c_float * 3)(0.1625, 0.1625, 0.1625)
     return out
+
+
+def fusion_dualview(
+    im_a,
+    im_b,
+    psf_a=None,  # should have isotropic voxels, defaults to simulated psf
+    psf_b=None,  # defaults to rotated psf_a
+    psf_a_bp=None,
+    psf_b_bp=None,
+    pixel_size1=[0.1625, 0.1625, 0.1625],  # XYZ ... NOT ZYX like numpy array
+    pixel_size2=None,  # defaults to the same as pixel_size1
+    reg_method=7,
+    rot_mode=0,
+    tmx_mode=0,
+    itmx=None,
+    ftol=0.0001,
+    reg_iters=3000,
+    iters=10,  # for deconvolution
+    device_num=0,
+    gpu_mem_mode=0,
+    **kwargs, # will be passed to psf generator if psf_a is None
+):
+    if not 0 <= reg_method <= 7:
+        raise ValueError("reg_method must be between 0-7")
+    if not 0 <= tmx_mode <= 3:
+        raise ValueError("tmx_mode must be between 0-3")
+
+    if tmx_mode != 1 or itmx is None:
+        itmx = np.eye(4)
+    itmx = (ctypes.c_float * 16)(*itmx.ravel())
+
+    if psf_a is None:
+        from .psf import spim_psf
+        # the PSF should have isotropic voxels
+        kwargs['dz'] = pixel_size1[0]
+        kwargs['dxy'] = pixel_size1[0]
+        kwargs['wvl'] = kwargs.get('wvl', 0.55)
+        kwargs['real'] = kwargs.get('real', True)
+        kwargs['sheet_fwhm'] = kwargs.get('sheet_fwhm', 3)
+        psf_a = spim_psf(**kwargs)
+    if psf_b is None:
+        psf_b = np.ascontiguousarray(np.transpose(psf_a, (2, 1, 0)))
+
+    if pixel_size2 is None:
+        pixel_size2 = pixel_size1
+    pixel_size1 = (ctypes.c_float * 3)(*pixel_size1)
+    pixel_size2 = (ctypes.c_float * 3)(*pixel_size2)
+
+    if isinstance(psf_a_bp, np.ndarray) and isinstance(psf_b_bp, np.ndarray):
+        unmatched = True
+    else:
+        unmatched = False
+        psf_a_bp = psf_a
+        psf_b_bp = psf_b
+
+    # FIXME: figure out size
+    outshape = list(im_a.shape)
+    outshape[0] = round(outshape[0] * pixel_size1[2] / pixel_size1[0])
+    h_decon = np.empty(outshape, dtype=np.float32)
+    h_reg = np.empty_like(h_decon, dtype=np.float32)
+    records = (ctypes.c_float * 22)(0)
+    LIB.fusion_dualview(
+        h_decon,
+        h_reg,
+        itmx,
+        im_a.astype(np.float32),
+        im_b.astype(np.float32),
+        (ctypes.c_uint * 3)(*reversed(im_a.shape)),
+        (ctypes.c_uint * 3)(*reversed(im_b.shape)),
+        pixel_size1,
+        pixel_size2,
+        rot_mode,
+        reg_method,
+        tmx_mode,
+        ftol,
+        reg_iters,
+        psf_a.astype(np.float32),
+        psf_b.astype(np.float32),
+        (ctypes.c_uint * 3)(*reversed(psf_a.shape)),
+        iters,
+        device_num,
+        gpu_mem_mode,
+        records,
+        unmatched,
+        psf_a_bp.astype(np.float32),
+        psf_b_bp.astype(np.float32),
+    )
+    return h_decon, h_reg, records, itmx
 
 
 def fusion_dualview_batch(

@@ -108,7 +108,6 @@ if LIB:
         (ctypes.c_float * 11),
     ]
 
-
     LIB.decon_dualview.restype = ctypes.c_int
     LIB.decon_dualview.argtypes = [
         # float *h_decon: deconvolved image, it is the same size with the input image h_img1
@@ -152,7 +151,6 @@ if LIB:
         np.ctypeslib.ndpointer(ctypes.c_float, flags="C_CONTIGUOUS"),
     ]
 
-
     LIB.decon_singleview.restype = ctypes.c_int
     LIB.decon_singleview.argtypes = [
         np.ctypeslib.ndpointer(ctypes.c_float, flags="C_CONTIGUOUS"),  # float *h_decon
@@ -168,6 +166,39 @@ if LIB:
         np.ctypeslib.ndpointer(ctypes.c_float, flags="C_CONTIGUOUS"),  # float *h_psf_bp
     ]
 
+    # 3D registration and joint RL deconvolution with GPU implementation,
+    # compatible with unmatched back projector.
+    LIB.fusion_dualview.restype = ctypes.c_int
+    LIB.fusion_dualview.argtypes = [
+        np.ctypeslib.ndpointer(ctypes.c_float, flags="C_CONTIGUOUS"),  # float *h_decon,
+        np.ctypeslib.ndpointer(ctypes.c_float, flags="C_CONTIGUOUS"),  # float *h_reg,
+        (ctypes.c_float * 16),  # float *iTmx,
+        np.ctypeslib.ndpointer(ctypes.c_float, flags="C_CONTIGUOUS"),  # float *h_img1,
+        np.ctypeslib.ndpointer(ctypes.c_float, flags="C_CONTIGUOUS"),  # float *h_img2,
+        (ctypes.c_uint * 3),  # unsigned int *imSizeIn1,
+        (ctypes.c_uint * 3),  # unsigned int *imSizeIn2,
+        (ctypes.c_float * 3),  # float *pixelSize1,
+        (ctypes.c_float * 3),  # float *pixelSize2,
+        ctypes.c_uint,  # int imRotation,
+        ctypes.c_uint,  # int regMethod,
+        ctypes.c_uint,  # int flagInitialTmx,
+        ctypes.c_float,  # float FTOL,
+        ctypes.c_uint,  # int itLimit,
+        np.ctypeslib.ndpointer(ctypes.c_float, flags="C_CONTIGUOUS"),  # float *h_psf1,
+        np.ctypeslib.ndpointer(ctypes.c_float, flags="C_CONTIGUOUS"),  # float *h_psf2,
+        (ctypes.c_uint * 3),  # unsigned int *psfSizeIn,
+        ctypes.c_uint,  # int itNumForDecon,
+        ctypes.c_uint,  # int deviceNum,
+        ctypes.c_uint,  # int gpuMemMode,
+        (ctypes.c_float * 22),  # float *fusionRecords,
+        ctypes.c_bool,  # bool flagUnmatach,
+        np.ctypeslib.ndpointer(
+            ctypes.c_float, flags="C_CONTIGUOUS"
+        ),  # float *h_psf_bp1,
+        np.ctypeslib.ndpointer(
+            ctypes.c_float, flags="C_CONTIGUOUS"
+        ),  # float *h_psf_bp2
+    ]
 
     # 3D registration and joint RL deconvolution with GPU implementation,
     # compatible with unmatched back projector. Processing for time-sequence images
