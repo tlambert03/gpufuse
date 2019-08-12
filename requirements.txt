@@ -1,5 +1,5 @@
 numpy
 tifffile>=2019.3.18
 matplotlib
-scikit-image
 scipy
+git+git://github.com/MicroscPSF/MicroscPSF-Py.git
