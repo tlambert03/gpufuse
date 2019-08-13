@@ -43,30 +43,48 @@ def crop(args):
 
 def fuse_in_mem(args):
     import tifffile as tf
+    import numpy as np
+
     jobs = gpufuse.crop.gather_jobs(args.folder)
     meta = gpufuse.crop.get_exp_meta(args.folder)
-    outfolder = os.path.join(args.folder, 'decon')
+    outfolder = os.path.join(args.folder, "decon")
     os.makedirs(outfolder, exist_ok=True)
     for job in jobs:
-        for chan in range(meta['nC'] // 2):
-            decon = gpufuse.crop.crop_array_inmem(*job, chan=chan)
-            t = job[4]
-            pos = job[5]
-            name = os.path.join(outfolder, f'p{pos}_t{t}_c{chan}chan.tif')
-            tf.imsave(name, decon.astype('single'))
+        res = []
+        for chan in range(meta["nC"] // 2):
+            if args.merge:
+                res.append(gpufuse.crop.crop_array_inmem(*job, chan=chan))
+            else:
+                decon = gpufuse.crop.crop_array_inmem(*job, chan=chan)
+                t = job[4]
+                pos = job[5]
+                name = os.path.join(outfolder, f"p{pos}_t{t}_c{chan}.tif")
+                tf.imsave(
+                    name, decon[:, np.newaxis, :, :].astype("single"), imagej=True
+                )
+        if args.merge and len(res):
+            res = np.stack(res, 1)
+            name = os.path.join(outfolder, f"p{pos}_t{t}.tif")
+            tf.imsave(name, decon.astype("single"), imagej=True)
 
-            
+
 def fuse(args):
-    spim_a_folder = os.path.join(args.folder, 'SPIMA')
-    spim_b_folder = os.path.join(args.folder, 'SPIMB')
+    spim_a_folder = os.path.join(args.folder, "SPIMA")
+    spim_b_folder = os.path.join(args.folder, "SPIMB")
     if not os.path.exists(spim_a_folder):
-        spim_a_folder = input("Could not autodetect SPIMA folder, enter SPIMA directory: ")
+        spim_a_folder = input(
+            "Could not autodetect SPIMA folder, enter SPIMA directory: "
+        )
     if not os.path.exists(spim_b_folder):
-        spim_b_folder = input("Could not autodetect SPIMB folder, enter SPIMB directory: ")
-    assert os.path.exists(spim_a_folder) and os.path.exists(spim_b_folder), 'No folder'
-    
+        spim_b_folder = input(
+            "Could not autodetect SPIMB folder, enter SPIMB directory: "
+        )
+    assert os.path.exists(spim_a_folder) and os.path.exists(spim_b_folder), "No folder"
+
     print(args.PSF_A)
-    gpufuse.fusion_dualview_batch(spim_a_folder, args.PSF_A, spim_b_folder=spim_b_folder)
+    gpufuse.fusion_dualview_batch(
+        spim_a_folder, args.PSF_A, spim_b_folder=spim_b_folder
+    )
 
 
 parser = argparse.ArgumentParser(description="diSPIM fusion helper")
@@ -84,6 +102,9 @@ parser_fuse.add_argument(
     nargs=1,
     help="PSF for pathA",
     type=lambda x: is_valid_file(parser, x),
+)
+parser_fuse.add_argument(
+    "-m", "--merge", action="store_true", help="merge channels after fusion"
 )
 
 parser_crop = subparsers.add_parser("crop", help="crop OME-formatted dispim series")
