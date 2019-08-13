@@ -337,7 +337,7 @@ def prep_experiment(exp, positions=None):
 def crop_array_inmem(
     exp, extent_a, extent_b, meta, time, pos, outdir, chan=0, background=100
 ):
-    from gpufuse.func import fusion_dualview
+    from .func import fusion_dualview
 
     im0 = glob(os.path.join(exp, "**", "*{:04d}*Pos0*.tif".format(time)))[0]
     print(f"loading file {os.path.basename(im0)}, pos {pos}, t: {time}, c: {chan}")
