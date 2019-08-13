@@ -47,7 +47,7 @@ def fuse_in_mem(args):
 
     jobs = gpufuse.crop.gather_jobs(args.folder)
     meta = gpufuse.crop.get_exp_meta(args.folder)
-    outfolder = os.path.join(args.folder, "decon")
+    outfolder = os.path.join(args.folder, "_decon")
     os.makedirs(outfolder, exist_ok=True)
     for job in jobs:
         res = []
