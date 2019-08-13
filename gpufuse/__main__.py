@@ -59,11 +59,15 @@ def fuse_in_mem(args):
     meta = gpufuse.crop.get_exp_meta(args.folder)
     outfolder = os.path.join(args.folder, "_decon")
     os.makedirs(outfolder, exist_ok=True)
-
+    
     for job in jobs:
         res = []
         t = job[4]
         pos = job[5]
+        if args.p and pos not in args.p:
+            continue
+        if args.t and t not in args.t:
+            continue
         if args.merge:
             name = os.path.join(outfolder, f"p{pos}_t{t}.tif")
             if os.path.exists(name) and not args.reprocess:
@@ -132,6 +136,21 @@ parser_fuse.add_argument(
     action="store_true",
     help="reprocess already fused images (otherwise skip)",
 )
+parser_fuse.add_argument(
+    "-p",
+    metavar="positions",
+    type=int,
+    nargs="+",
+    help="specific positions to process, sep by spaces",
+)
+parser_fuse.add_argument(
+    "-t",
+    metavar="timepoints",
+    type=int,
+    nargs="+",
+    help="specific timepoints to process, sep by spaces",
+)
+
 
 parser_crop = subparsers.add_parser("crop", help="crop OME-formatted dispim series")
 parser_crop.add_argument(
