@@ -41,6 +41,21 @@ def crop(args):
         gpufuse.prep_experiment(args.folder, args.p)
 
 
+def fuse_in_mem(args):
+    import tifffile as tf
+    jobs = gpufuse.crop.gather_jobs(args.folder)
+    meta = gpufuse.crop.get_exp_meta(args.folder)
+    outfolder = os.path.join(args.folder, 'decon')
+    os.makedirs(outfolder, exist_ok=True)
+    for job in jobs:
+        for chan in range(meta['nC'] // 2):
+            decon = gpufuse.crop.crop_array_inmem(*job, chan=chan)
+            t = job[4]
+            pos = job[5]
+            name = os.path.join(outfolder, f'p{pos}_t{t}_c{chan}chan.tif')
+            tf.imsave(name, decon.astype('single'))
+
+            
 def fuse(args):
     spim_a_folder = os.path.join(args.folder, 'SPIMA')
     spim_b_folder = os.path.join(args.folder, 'SPIMB')
@@ -64,7 +79,9 @@ parser_fuse.add_argument(
     type=lambda x: is_valid_folder(parser, x),
 )
 parser_fuse.add_argument(
-    "PSF_A",
+    "--psfa",
+    required=False,
+    nargs=1,
     help="PSF for pathA",
     type=lambda x: is_valid_file(parser, x),
 )
@@ -93,7 +110,7 @@ parser_crop.add_argument(
     help="specific timepoints to process, sep by spaces",
 )
 
-parser_fuse.set_defaults(func=fuse)
+parser_fuse.set_defaults(func=fuse_in_mem)
 parser_crop.set_defaults(func=crop)
 args = parser.parse_args()
 
