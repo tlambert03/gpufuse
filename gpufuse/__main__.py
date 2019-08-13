@@ -53,24 +53,24 @@ def fuse_in_mem(args):
         res = []
         t = job[4]
         pos = job[5]
-        for chan in range(meta["nC"] // 2):
-            if args.merge:
-                name = os.path.join(outfolder, f"p{pos}_t{t}.tif")
-                if os.path.exists(name) and not args.reprocess:
-                    continue
+        if args.merge:
+            name = os.path.join(outfolder, f"p{pos}_t{t}.tif")
+            if os.path.exists(name) and not args.reprocess:
+                print(f"skipping already processed file {name}")
+                continue
+            for chan in range(meta["nC"] // 2):
                 res.append(gpufuse.crop.crop_array_inmem(*job, chan=chan))
-            else:
+            tf.imsave(name, np.stack(res, 1).astype("single"), imagej=True)
+        else:
+            for chan in range(meta["nC"] // 2):
                 name = os.path.join(outfolder, f"p{pos}_t{t}_c{chan}.tif")
                 if os.path.exists(name) and not args.reprocess:
+                    print(f"skipping already processed file {name}")
                     continue
                 decon = gpufuse.crop.crop_array_inmem(*job, chan=chan)
                 tf.imsave(
                     name, decon[:, np.newaxis, :, :].astype("single"), imagej=True
                 )
-        if args.merge and len(res):
-            res = np.stack(res, 1)
-            name = os.path.join(outfolder, f"p{pos}_t{t}.tif")
-            tf.imsave(name, decon.astype("single"), imagej=True)
 
 
 def fuse(args):
