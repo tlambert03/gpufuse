@@ -41,6 +41,16 @@ def crop(args):
         gpufuse.prep_experiment(args.folder, args.p)
 
 
+def fuse_in_thread(job, chan, name):
+    from concurrent.futures import ProcessPoolExecutor, process
+    with ProcessPoolExecutor() as executor:
+        decon = executor.map(gpufuse.crop.starcrop_inmem, ((job, chan),))
+    try:
+        return list(decon)[0]
+    except process.BrokenProcessPool:
+        return None
+
+
 def fuse_in_mem(args):
     import tifffile as tf
     import numpy as np
@@ -49,6 +59,7 @@ def fuse_in_mem(args):
     meta = gpufuse.crop.get_exp_meta(args.folder)
     outfolder = os.path.join(args.folder, "_decon")
     os.makedirs(outfolder, exist_ok=True)
+
     for job in jobs:
         res = []
         t = job[4]
@@ -59,18 +70,22 @@ def fuse_in_mem(args):
                 print(f"skipping already processed file {name}")
                 continue
             for chan in range(meta["nC"] // 2):
-                res.append(gpufuse.crop.crop_array_inmem(*job, chan=chan))
-            tf.imsave(name, np.stack(res, 1).astype("single"), imagej=True)
+                decon = fuse_in_thread(job, chan, name)
+                if decon is not None:
+                    res.append(decon)
+            if len(res):
+                tf.imsave(name, np.stack(res, 1).astype("single"), imagej=True)
         else:
             for chan in range(meta["nC"] // 2):
                 name = os.path.join(outfolder, f"p{pos}_t{t}_c{chan}.tif")
                 if os.path.exists(name) and not args.reprocess:
                     print(f"skipping already processed file {name}")
                     continue
-                decon = gpufuse.crop.crop_array_inmem(*job, chan=chan)
-                tf.imsave(
-                    name, decon[:, np.newaxis, :, :].astype("single"), imagej=True
-                )
+                decon = fuse_in_thread(job, chan, name)
+                if decon is not None:
+                    tf.imsave(
+                        name, decon[:, np.newaxis, :, :].astype("single"), imagej=True
+                    )
 
 
 def fuse(args):

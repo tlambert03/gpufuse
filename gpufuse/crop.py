@@ -372,6 +372,15 @@ def crop_array_inmem(
     return decon
 
 
+def starcrop_inmem(args):
+    job, chan = args
+    try:
+        return crop_array_inmem(*job, chan=chan)
+    except:
+        print('failed')
+        pass
+
+
 def crop_array(
     exp,
     extent_a,
