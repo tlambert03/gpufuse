@@ -51,14 +51,19 @@ def fuse_in_mem(args):
     os.makedirs(outfolder, exist_ok=True)
     for job in jobs:
         res = []
+        t = job[4]
+        pos = job[5]
         for chan in range(meta["nC"] // 2):
             if args.merge:
+                name = os.path.join(outfolder, f"p{pos}_t{t}.tif")
+                if os.path.exists(name) and not args.reprocess:
+                    continue
                 res.append(gpufuse.crop.crop_array_inmem(*job, chan=chan))
             else:
-                decon = gpufuse.crop.crop_array_inmem(*job, chan=chan)
-                t = job[4]
-                pos = job[5]
                 name = os.path.join(outfolder, f"p{pos}_t{t}_c{chan}.tif")
+                if os.path.exists(name) and not args.reprocess:
+                    continue
+                decon = gpufuse.crop.crop_array_inmem(*job, chan=chan)
                 tf.imsave(
                     name, decon[:, np.newaxis, :, :].astype("single"), imagej=True
                 )
@@ -105,6 +110,12 @@ parser_fuse.add_argument(
 )
 parser_fuse.add_argument(
     "-m", "--merge", action="store_true", help="merge channels after fusion"
+)
+parser_fuse.add_argument(
+    "-r",
+    "--reprocess",
+    action="store_true",
+    help="reprocess already fused images (otherwise skip)",
 )
 
 parser_crop = subparsers.add_parser("crop", help="crop OME-formatted dispim series")
