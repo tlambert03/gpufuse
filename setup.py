@@ -1,6 +1,8 @@
 from distutils.core import setup
 import sys
 
+PACKAGE_DATA = []
+
 # add specific library by platform
 if sys.platform.startswith('darwin'):
     PACKAGE_DATA += [
