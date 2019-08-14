@@ -20,7 +20,7 @@ elif PLAT == "linux":
 
 
 LIBFILE = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)), "bin", "libaim" + EXT
+    os.path.dirname(__file__), "bin", "libaim" + EXT
 )
 try:
     LIB = ctypes.CDLL(LIBFILE)
