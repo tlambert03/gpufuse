@@ -45,6 +45,7 @@ setup(
         'B'
     ],
     entry_points={
+        'console_scripts': [
             'gpufuse = gpufuse.__main__'
         ],
     },
