@@ -1,20 +1,6 @@
 from distutils.core import setup
 import sys
 
-PACKAGE_DATA = []
-
-# add specific library by platform
-if sys.platform.startswith('darwin'):
-    PACKAGE_DATA += [
-            'bin/*.dylib',
-    ]
-elif sys.platform.startswith('win32'):
-    PACKAGE_DATA += [
-            path.join('bin', '*.dll'),    ]
-else:
-    PACKAGE_DATA += [
-            'bin/*.so',
-    ]
 
 setup(
     name='gpufuse',
@@ -27,7 +13,7 @@ setup(
     license='MIT',
     long_description=open('README.md').read(),
     package_data={
-        'gpufuse': PACKAGE_DATA,
+        'gpufuse': ['bin/*'],
     },
     classifiers=[
         'Intended Audience :: Science/Research',
