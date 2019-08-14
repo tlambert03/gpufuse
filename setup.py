@@ -43,7 +43,7 @@ setup(
     install_requires=[
         'A',
         'B'
-    ]
+    ],
     entry_points={
             'gpufuse = gpufuse.__main__'
         ],
