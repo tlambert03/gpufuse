@@ -63,7 +63,8 @@ class Selection3D:
             self.make_callback(axes),
             drawtype="box",
             useblit=False,
-            rectprops=dict(facecolor="red", edgecolor="red", alpha=0.4, fill=False),
+            rectprops=dict(facecolor="red", edgecolor="red",
+                           alpha=0.4, fill=False),
             interactive=True,
         )
         self.selectors.append((selector, axes))
@@ -140,7 +141,8 @@ def parse_dispim_meta(impath):
         # tifffile version > 2019.2.22
         if isinstance(meta, str):
             meta = tf.xml2dict(meta)["OME"]
-    im0 = meta["Image"][0] if isinstance(meta["Image"], list) else meta["Image"]
+    im0 = meta["Image"][0] if isinstance(
+        meta["Image"], list) else meta["Image"]
     out = {"channels": [], "nS": len(meta["Image"])}
     for x in "XYZCT":
         out["n" + x] = im0["Pixels"]["Size" + x]
@@ -154,7 +156,8 @@ def parse_dispim_meta(impath):
 
 def get_exp_meta(exp):
     dirs = sorted(
-        [d for d in os.listdir(exp) if not (d.startswith(".") or d.startswith("_"))]
+        [d for d in os.listdir(exp) if not (
+            d.startswith(".") or d.startswith("_"))]
     )
     try:
         im0 = sorted(glob(os.path.join(exp, dirs[0] + "/*.tif")))[0]
@@ -162,8 +165,10 @@ def get_exp_meta(exp):
         raise FileNotFoundError("No tiff files found in {}".format(exp))
     meta = parse_dispim_meta(im0)
     meta["nT"] = len(dirs)
-    meta["ind_a"] = [x for x, c in enumerate(meta["channels"]) if "RightCam" in c]
-    meta["ind_b"] = [x for x, c in enumerate(meta["channels"]) if "LeftCam" in c]
+    meta["ind_a"] = [x for x, c in enumerate(
+        meta["channels"]) if "RightCam" in c]
+    meta["ind_b"] = [x for x, c in enumerate(
+        meta["channels"]) if "LeftCam" in c]
     return meta
 
 
@@ -203,11 +208,13 @@ def load_dispim_mips(exp, tind=[0], pos=0):
     # newshape = list(mip_zy.shape)
     # newshape[-1] = round(newshape[-1] * meta["dzRatio"])
     # mip_zyr = skimage.transform.resize(mip_zy, newshape)
-    mip_zyr = resize_axis(mip_zy, round(mip_zy.shape[-1] * meta["dzRatio"]), axis=-1)
+    mip_zyr = resize_axis(mip_zy, round(
+        mip_zy.shape[-1] * meta["dzRatio"]), axis=-1)
     # newshape = list(mip_xz.shape)
     # newshape[-2] = round(newshape[-2] * meta["dzRatio"])
     # mip_xzr = skimage.transform.resize(mip_xz, newshape)
-    mip_xzr = resize_axis(mip_xz, round(mip_xz.shape[-2] * meta["dzRatio"]), axis=-2)
+    mip_xzr = resize_axis(mip_xz, round(
+        mip_xz.shape[-2] * meta["dzRatio"]), axis=-2)
 
     patha, pathb = [None] * 3, [None] * 3
     patha[0], pathb[0] = mip_xy
@@ -223,15 +230,20 @@ def select_volume(patha, pathb, initial_coords=None, contrast=0.8, controller=No
     ax3 = fig.add_subplot(2, 2, 3, adjustable="box")
     ax4 = fig.add_subplot(2, 2, 4, sharey=ax1)
     plt.setp(ax2.get_yaxis(), visible=False)
-    ax1.imshow(patha[0], aspect="equal", vmax=patha[0].max() * contrast, cmap="gray")
+    ax1.imshow(patha[0], aspect="equal",
+               vmax=patha[0].max() * contrast, cmap="gray")
     ax2.imshow(
         np.fliplr(patha[2]), aspect="equal", vmax=patha[2].max() * contrast, cmap="gray"
     )
-    ax3.imshow(pathb[0], aspect="equal", vmax=pathb[0].max() * contrast, cmap="gray")
-    ax4.imshow(pathb[2], aspect="equal", vmax=pathb[2].max() * contrast, cmap="gray")
+    ax3.imshow(pathb[0], aspect="equal",
+               vmax=pathb[0].max() * contrast, cmap="gray")
+    ax4.imshow(pathb[2], aspect="equal",
+               vmax=pathb[2].max() * contrast, cmap="gray")
     plt.tight_layout()
-    s1 = Selection3D(coords=initial_coords[0] if initial_coords is not None else None)
-    s2 = Selection3D(coords=initial_coords[1] if initial_coords is not None else None)
+    s1 = Selection3D(
+        coords=initial_coords[0] if initial_coords is not None else None)
+    s2 = Selection3D(
+        coords=initial_coords[1] if initial_coords is not None else None)
     s1.add_selector(ax1, "xy")
     s1.add_selector(ax2, "zy")
     s2.add_selector(ax3, "xy")
@@ -326,7 +338,8 @@ def prep_experiment(exp, positions=None):
             )
             if not controller.skipped:
                 with open(os.path.join(outdir, "pos{}.json".format(p)), "w") as _file:
-                    json.dump({"data": [os.path.abspath(exp), ext_a, ext_b, p]}, _file)
+                    json.dump(
+                        {"data": [os.path.abspath(exp), ext_a, ext_b, p]}, _file)
         except IndexError:
             break
         if controller.abort:
@@ -335,12 +348,13 @@ def prep_experiment(exp, positions=None):
 
 
 def crop_array_inmem(
-    exp, extent_a, extent_b, meta, time, pos, outdir, chan=0, background=100
+    exp, extent_a, extent_b, meta, time, pos, outdir, chan=0, background=100, device_num=0
 ):
     from .func import fusion_dualview
 
     im0 = glob(os.path.join(exp, "**", "*{:04d}*Pos0*.tif".format(time)))[0]
-    print(f"loading file {os.path.basename(im0)}, pos {pos}, t: {time}, c: {chan}")
+    print(
+        f"loading file {os.path.basename(im0)}, pos {pos}, t: {time}, c: {chan}")
     maxn = meta["nC"] * meta["nZ"]
     keys = list(range(meta["ind_a"][chan], maxn, meta["nC"]))
     keys.extend(list(range(meta["ind_b"][chan], maxn, meta["nC"])))
@@ -351,8 +365,10 @@ def crop_array_inmem(
     slc_b_x, slc_b_y, slc_b_z = extent_b
     # weird reversing is due to the way the slices were picked in select_volume()
     slc_a_z = [None, None]
-    slc_a_z[0] = round((meta["dzRatio"] * meta["nZ"] - _slc_a_z[1]) / meta["dzRatio"])
-    slc_a_z[1] = round((meta["dzRatio"] * meta["nZ"] - _slc_a_z[0]) / meta["dzRatio"])
+    slc_a_z[0] = round((meta["dzRatio"] * meta["nZ"] -
+                        _slc_a_z[1]) / meta["dzRatio"])
+    slc_a_z[1] = round((meta["dzRatio"] * meta["nZ"] -
+                        _slc_a_z[0]) / meta["dzRatio"])
     slc_b_z = [round(i / meta["dzRatio"]) for i in slc_b_z]
     idx_a = 0 if meta["ind_a"][chan] < meta["ind_b"][chan] else 1
     idx_b = 1 if idx_a == 0 else 0
@@ -367,16 +383,20 @@ def crop_array_inmem(
     im_a[im_a < 0] = 0
     im_b[im_b < 0] = 0
     decon = fusion_dualview(
-        im_a, im_b, pixel_size1=[meta["dX"], meta["dX"], meta["dZ"]], rot_mode=1
+        im_a, im_b, pixel_size1=[meta["dX"], meta["dX"], meta["dZ"]], rot_mode=1, device_num=device_num
     )[0]
     return decon
 
 
 def starcrop_inmem(args):
-    job, chan = args
+    if len(args) == 3:
+        job, chan, gpu = args
+    elif len(args) == 2:
+        job, chan = args
+        gpu = 0
     try:
-        return crop_array_inmem(*job, chan=chan)
-    except:
+        return crop_array_inmem(*job, chan=chan, device_num=gpu)
+    except Exception:
         print('failed')
         pass
 
@@ -474,7 +494,8 @@ def crop_all(exp, extent_a, extent_b, pos=0):
     for c in range(meta["nC"] // 2):
         os.makedirs(os.path.join(outdir, "ch{}".format(c)), exist_ok=True)
 
-    jobs = [(exp, extent_a, extent_b, meta, t, pos, outdir) for t in range(meta["nT"])]
+    jobs = [(exp, extent_a, extent_b, meta, t, pos, outdir)
+            for t in range(meta["nT"])]
     return jobs
 
 
@@ -510,7 +531,8 @@ def execute(jobsdir, positions=None, timepoints=None, client=None):
     jobs = gather_jobs(jobsdir, positions, timepoints)
     if client is None:
         client = Pool()
-    assert hasattr(client, "map"), "provided client does not implement a map function"
+    assert hasattr(
+        client, "map"), "provided client does not implement a map function"
     return client.map(starcrop, jobs)
 
 
