@@ -2,6 +2,7 @@ import argparse
 import os
 import sys
 
+
 def main():
     try:
         import gpufuse
@@ -13,7 +14,6 @@ def main():
         sys.path.append(os.path.normpath(os.path.join(SCRIPT_DIR, PACKAGE_PARENT)))
         import gpufuse
 
-
     def is_valid_folder(parser, arg):
         if not os.path.exists(arg):
             parser.error("The folder %s does not exist!" % arg)
@@ -21,12 +21,10 @@ def main():
             parser.error("%s is not a folder!" % arg)
         return arg
 
-
     def is_valid_file(parser, arg):
         if not os.path.exists(arg):
             parser.error("The file %s does not exist!" % arg)
         return arg
-
 
     def crop(args):
         if args.execute:
@@ -39,18 +37,17 @@ def main():
             else:
                 print("exiting")
         else:
-            gpufuse.prep_experiment(args.folder, args.p)
-
+            gpufuse.prep_experiment(args.folder, positions=args.p, tind=args.sum)
 
     def fuse_in_thread(job, chan, name):
         from concurrent.futures import ProcessPoolExecutor, process
+
         with ProcessPoolExecutor() as executor:
             decon = executor.map(gpufuse.crop.starcrop_inmem, ((job, chan),))
         try:
             return list(decon)[0]
         except process.BrokenProcessPool:
             return None
-
 
     def fuse_in_mem(args):
         import tifffile as tf
@@ -60,7 +57,7 @@ def main():
         meta = gpufuse.crop.get_exp_meta(args.folder)
         outfolder = os.path.join(args.folder, "_decon")
         os.makedirs(outfolder, exist_ok=True)
-        
+
         for job in jobs:
             res = []
             t = job[4]
@@ -89,9 +86,10 @@ def main():
                     decon = fuse_in_thread(job, chan, name)
                     if decon is not None:
                         tf.imsave(
-                            name, decon[:, np.newaxis, :, :].astype("single"), imagej=True
+                            name,
+                            decon[:, np.newaxis, :, :].astype("single"),
+                            imagej=True,
                         )
-
 
     def fuse(args):
         spim_a_folder = os.path.join(args.folder, "SPIMA")
@@ -104,13 +102,14 @@ def main():
             spim_b_folder = input(
                 "Could not autodetect SPIMB folder, enter SPIMB directory: "
             )
-        assert os.path.exists(spim_a_folder) and os.path.exists(spim_b_folder), "No folder"
+        assert os.path.exists(spim_a_folder) and os.path.exists(
+            spim_b_folder
+        ), "No folder"
 
         print(args.PSF_A)
         gpufuse.fusion_dualview_batch(
             spim_a_folder, args.PSF_A, spim_b_folder=spim_b_folder
         )
-
 
     parser = argparse.ArgumentParser(description="diSPIM fusion helper")
     subparsers = parser.add_subparsers(help="sub-commands")
@@ -152,7 +151,6 @@ def main():
         help="specific timepoints to process, sep by spaces",
     )
 
-
     parser_crop = subparsers.add_parser("crop", help="crop OME-formatted dispim series")
     parser_crop.add_argument(
         "folder",
@@ -176,6 +174,15 @@ def main():
         nargs="+",
         help="specific timepoints to process, sep by spaces",
     )
+    parser_crop.add_argument(
+        "-s",
+        "--sum",
+        metavar="sumindices",
+        type=int,
+        nargs="+",
+        default=[1, -1],
+        help="time indices to sum when cropping, negative indices are relative to last timepoint",
+    )
 
     parser_fuse.set_defaults(func=fuse_in_mem)
     parser_crop.set_defaults(func=crop)
@@ -183,6 +190,7 @@ def main():
     args = parser.parse_args()
 
     args.func(args)
+
 
 if __name__ == "__main__":
     main()

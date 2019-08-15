@@ -1,5 +1,4 @@
 from distutils.core import setup
-import sys
 
 
 setup(
@@ -9,7 +8,7 @@ setup(
     author='Talley Lambert',
     author_email='talley.lambert@gmail.com',
     url='https://github.com/tlambert03/gpufuse',
-    packages=['gpufuse',],
+    packages=['gpufuse'],
     license='MIT',
     long_description=open('README.md').read(),
     package_data={
