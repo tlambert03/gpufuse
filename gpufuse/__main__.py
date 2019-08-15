@@ -179,6 +179,7 @@ def main():
 
     parser_fuse.set_defaults(func=fuse_in_mem)
     parser_crop.set_defaults(func=crop)
+    parser.set_defaults(func=lambda x: parser.print_help(sys.stderr))
     args = parser.parse_args()
 
     args.func(args)
