@@ -81,6 +81,7 @@ def main():
                         res.append(decon)
                     else:
                         failed_positions.update([pos])
+                        break
                 if len(res):
                     tf.imsave(name, np.stack(res, 1).astype("single"), imagej=True)
             else:
