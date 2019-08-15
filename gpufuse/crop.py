@@ -326,7 +326,7 @@ def prep_experiment(exp, positions=None):
             )
             if not controller.skipped:
                 with open(os.path.join(outdir, "pos{}.json".format(p)), "w") as _file:
-                    json.dump({"data": [exp, ext_a, ext_b, p]}, _file)
+                    json.dump({"data": [os.path.abspath(exp), ext_a, ext_b, p]}, _file)
         except IndexError:
             break
         if controller.abort:
