@@ -52,7 +52,9 @@ def main():
     def fuse_in_mem(args):
         import tifffile as tf
         import numpy as np
+        from collections import Counter
 
+        failed_positions = Counter()
         jobs = gpufuse.crop.gather_jobs(args.folder)
         meta = gpufuse.crop.get_exp_meta(args.folder)
         outfolder = os.path.join(args.folder, "_decon")
@@ -62,6 +64,8 @@ def main():
             res = []
             t = job[4]
             pos = job[5]
+            if failed_positions[pos] > args.minfail:
+                continue
             if args.p and pos not in args.p:
                 continue
             if args.t and t not in args.t:
@@ -75,6 +79,8 @@ def main():
                     decon = fuse_in_thread(job, chan, name)
                     if decon is not None:
                         res.append(decon)
+                    else:
+                        failed_positions.update([pos])
                 if len(res):
                     tf.imsave(name, np.stack(res, 1).astype("single"), imagej=True)
             else:
@@ -90,6 +96,8 @@ def main():
                             decon[:, np.newaxis, :, :].astype("single"),
                             imagej=True,
                         )
+                    else:
+                        failed_positions.update([pos])
 
     def fuse(args):
         spim_a_folder = os.path.join(args.folder, "SPIMA")
@@ -149,6 +157,13 @@ def main():
         type=int,
         nargs="+",
         help="specific timepoints to process, sep by spaces",
+    )
+    parser_fuse.add_argument(
+        "--minfail",
+        metavar="minfail",
+        type=int,
+        default=1,
+        help="minimum number of failures before ignoring a position",
     )
 
     parser_crop = subparsers.add_parser("crop", help="crop OME-formatted dispim series")
