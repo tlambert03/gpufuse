@@ -2,4 +2,5 @@ numpy
 tifffile>=2019.3.18
 matplotlib
 scipy
+wurlitzer
 git+git://github.com/MicroscPSF/MicroscPSF-Py.git

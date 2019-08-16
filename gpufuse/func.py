@@ -13,6 +13,29 @@ def query_device():
     LIB.queryDevice()
 
 
+def dev_info():
+    """Return GPU info as dict."""
+    
+    from wurlitzer import pipes
+    with pipes() as (out, err):
+        LIB.queryDevice()
+    info = out.read()
+    devs = {}
+    for dev in info.strip().split("\n\n"):
+        if not dev.startswith('Device'):
+            continue
+        devnum = int(dev.lstrip('Device ')[0])
+        devs[devnum] = {
+            'id': devnum,
+            'name': dev.split('\n')[0].split(":")[1].strip().strip('"')
+        }
+        for line in dev.split('\n'):
+            if 'global memory' in line:
+                mem = line.split(' MBytes')[0].split(' ')[-1]
+                devs[devnum]['mem'] = int(mem)
+    return devs
+
+
 def get_tif_info(fname):
     """Get TIFF file information.
 
