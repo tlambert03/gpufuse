@@ -120,6 +120,36 @@ def main():
             spim_a_folder, args.PSF_A, spim_b_folder=spim_b_folder
         )
 
+    def view(args):
+        import tifffile as tf
+        import matplotlib.pyplot as plt
+
+        if args.file.endswith(".tif") or args.file.endswith(".tiff"):
+            print(f"loading {args.file}")
+            im = tf.imread(args.file)
+
+        elif os.path.isdir(args.file):
+            from glob import glob
+
+            im0 = glob(
+                os.path.join(args.file, "**", "*{:04d}*Pos0*.tif".format(args.t))
+            )[0]
+            print("loading timepoint {}, pos {}".format(args.t, args.p))
+            im = tf.imread(im0, series=args.p)
+
+        if args.max:
+            tf.imshow(
+                im.max(0),
+                vmax=im.max() * args.contrast,
+                cmap="gray",
+                photometric="minisblack",
+            )
+        else:
+            tf.imshow(
+                im, vmax=im.max() * args.contrast, cmap="gray", photometric="minisblack"
+            )
+        plt.show()
+
     parser = argparse.ArgumentParser(description="diSPIM fusion helper")
     subparsers = parser.add_subparsers(help="sub-commands")
 
@@ -200,8 +230,39 @@ def main():
         help="time indices to sum when cropping, negative indices are relative to last timepoint",
     )
 
+    parser_view = subparsers.add_parser("view", help="View tiff file or experiment")
+    parser_view.add_argument(
+        "file",
+        help="experiment file or folder with multiple timepoints",
+        type=lambda x: is_valid_file(parser, x),
+    )
+    parser_view.add_argument(
+        "-m", "--max", action="store_true", help="show max projection"
+    )
+    parser_view.add_argument(
+        "--contrast",
+        type=float,
+        default=0.5,
+        help="contrast of image (vmax = im.max * contrast)",
+    )
+    parser_view.add_argument(
+        "-p",
+        metavar="position",
+        type=int,
+        default=0,
+        help="when path is an experiment, position to show",
+    )
+    parser_view.add_argument(
+        "-t",
+        metavar="timepoint",
+        type=int,
+        default=0,
+        help="when path is an experiment, timepoint to show",
+    )
+
     parser_fuse.set_defaults(func=fuse_in_mem)
     parser_crop.set_defaults(func=crop)
+    parser_view.set_defaults(func=view)
     parser.set_defaults(func=lambda x: parser.print_help(sys.stderr))
     args = parser.parse_args()
 
