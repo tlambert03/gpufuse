@@ -15,24 +15,25 @@ def query_device():
 
 def dev_info():
     """Return GPU info as dict."""
-    
+
     from wurlitzer import pipes
+
     with pipes() as (out, err):
         LIB.queryDevice()
     info = out.read()
     devs = {}
     for dev in info.strip().split("\n\n"):
-        if not dev.startswith('Device'):
+        if not dev.startswith("Device"):
             continue
-        devnum = int(dev.lstrip('Device ')[0])
+        devnum = int(dev.lstrip("Device ")[0])
         devs[devnum] = {
-            'id': devnum,
-            'name': dev.split('\n')[0].split(":")[1].strip().strip('"')
+            "id": devnum,
+            "name": dev.split("\n")[0].split(":")[1].strip().strip('"'),
         }
-        for line in dev.split('\n'):
-            if 'global memory' in line:
-                mem = line.split(' MBytes')[0].split(' ')[-1]
-                devs[devnum]['mem'] = int(mem)
+        for line in dev.split("\n"):
+            if "global memory" in line:
+                mem = line.split(" MBytes")[0].split(" ")[-1]
+                devs[devnum]["mem"] = int(mem)
     return devs
 
 
@@ -81,7 +82,7 @@ def reg_3dgpu(
     sub_background=True,
     device_num=0,
     nptrans=False,
-    **kwargs  # just here to catch extra keyward arguments from util.fuse
+    **kwargs,  # just here to catch extra keyward arguments from util.fuse
 ):
     """Register two 3D numpy arrays on GPU.
 
@@ -179,7 +180,7 @@ def reg_3dcpu(
     reg_iters=3000,
     sub_background=True,
     nptrans=False,
-    **kwargs  # just here to catch extra keyward arguments from util.fuse
+    **kwargs,  # just here to catch extra keyward arguments from util.fuse
 ):
     """Register two 3D numpy arrays on CPU.
 
@@ -420,7 +421,7 @@ def fusion_dualview(
     iters=10,  # for deconvolution
     device_num=0,
     gpu_mem_mode=0,
-    **kwargs, # will be passed to psf generator if psf_a is None
+    **kwargs,  # will be passed to psf generator if psf_a is None
 ):
     if not 0 <= reg_method <= 7:
         raise ValueError("reg_method must be between 0-7")
@@ -433,12 +434,13 @@ def fusion_dualview(
 
     if psf_a is None:
         from .psf import spim_psf
+
         # the PSF should have isotropic voxels
-        kwargs['dz'] = pixel_size1[0]
-        kwargs['dxy'] = pixel_size1[0]
-        kwargs['wvl'] = kwargs.get('wvl', 0.55)
-        kwargs['real'] = kwargs.get('real', True)
-        kwargs['sheet_fwhm'] = kwargs.get('sheet_fwhm', 3)
+        kwargs["dz"] = pixel_size1[0]
+        kwargs["dxy"] = pixel_size1[0]
+        kwargs["wvl"] = kwargs.get("wvl", 0.55)
+        kwargs["real"] = kwargs.get("real", True)
+        kwargs["sheet_fwhm"] = kwargs.get("sheet_fwhm", 3)
         psf_a = spim_psf(**kwargs)
     if psf_b is None:
         psf_b = np.ascontiguousarray(np.transpose(psf_a, (2, 1, 0)))
@@ -461,6 +463,7 @@ def fusion_dualview(
     h_decon = np.empty(outshape, dtype=np.float32)
     h_reg = np.empty_like(h_decon, dtype=np.float32)
     records = (ctypes.c_float * 22)(0)
+    print("run")
     LIB.fusion_dualview(
         h_decon,
         h_reg,
@@ -487,6 +490,7 @@ def fusion_dualview(
         psf_a_bp.astype(np.float32),
         psf_b_bp.astype(np.float32),
     )
+    print(h_decon.min(), h_decon.max(), h_reg.min(), h_reg.max(), im_a.max())
     return h_decon, h_reg, records, itmx
 
 

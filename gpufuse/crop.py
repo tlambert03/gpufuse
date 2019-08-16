@@ -318,9 +318,12 @@ def prep_experiment(exp, positions=None, tind=None):
         try:
             mips = load_dispim_mips(exp, pos=p, tind=tind)
             try:
-                with open(os.path.join(outdir, "pos{}.json".format(p)), "r") as _file:
-                    d = json.load(_file)["data"]
-                    initial_coords = [d[1], d[2]]
+                d = parse_job(os.path.join(outdir, "pos{}.json".format(p)))
+                initial_coords = [d["extent_a"], d["extent_b"]]
+                # old format
+                # with open(os.path.join(outdir, "pos{}.json".format(p)), "r") as _file:
+                #     d = json.load(_file)["data"]
+                #     initial_coords = [d[1], d[2]]
             except Exception:
                 initial_coords = None
             controller.skipped = False
@@ -329,7 +332,17 @@ def prep_experiment(exp, positions=None, tind=None):
             )
             if not controller.skipped:
                 with open(os.path.join(outdir, "pos{}.json".format(p)), "w") as _file:
-                    json.dump({"data": [os.path.abspath(exp), ext_a, ext_b, p]}, _file)
+                    # json.dump({"data": [os.path.abspath(exp), ext_a, ext_b, p]}, _file)
+                    json.dump(
+                        {
+                            "exp": os.path.abspath(exp),
+                            "extent_a": ext_a,
+                            "extent_b": ext_b,
+                            "pos": p,
+                        },
+                        _file,
+                    )
+
         except IndexError:
             break
         if controller.abort:
@@ -338,16 +351,7 @@ def prep_experiment(exp, positions=None, tind=None):
 
 
 def crop_array_inmem(
-    exp,
-    extent_a,
-    extent_b,
-    meta,
-    time,
-    pos,
-    outdir,
-    chan=0,
-    background=100,
-    device_num=0,
+    exp, extent_a, extent_b, meta, time, pos, chan, device_num=0, background=100
 ):
     from .func import fusion_dualview
 
@@ -378,27 +382,65 @@ def crop_array_inmem(
     im_b -= background
     im_a[im_a < 0] = 0
     im_b[im_b < 0] = 0
-    decon = fusion_dualview(
+    return fusion_dualview(
         im_a,
         im_b,
         pixel_size1=[meta["dX"], meta["dX"], meta["dZ"]],
         rot_mode=1,
         device_num=device_num,
-    )[0]
-    return decon
+    )
 
 
-def starcrop_inmem(args):
-    if len(args) == 3:
-        job, chan, gpu = args
-    elif len(args) == 2:
-        job, chan = args
-        gpu = 0
+def crop_array_and_write(args):
+    # meant for parallel execution
+    exp, extent_a, extent_b, meta, time, pos, chan, *rest = args
+    gpu = args[7] if len(args) > 7 else 0
+
+    outfolder = os.path.join(exp, "_decon")
+    name = os.path.join(outfolder, f"p{pos}_t{time}_c{chan}.tif")
+
+    logfile = os.path.join(outfolder, 'log.json')
+    if os.path.exists(name):
+        with open(logfile, "r") as jsonFile:
+            info = json.load(jsonFile)
+        info['skipped'] = info.get('skipped', [])
+        info['skipped'].append((f'p{pos}_t{time}_c{chan}', 'exists'))
+        with open(logfile, "w") as jsonFile:
+            json.dump(info, jsonFile)
+        print(f"SKIPPING pos{pos} t{time} c{chan} - already exists")
+        return {'err': False, 'skipped': True}
+    if os.path.exists(logfile):
+        with open(logfile, "r") as jsonFile:
+            info = json.load(jsonFile)
+        if 'errors' in info and f"{gpu}_{pos}" in info['errors']:
+            info['skipped'] = info.get('skipped', [])
+            info['skipped'].append((f'p{pos}_t{time}_c{chan}', 'previous error'))
+            with open(logfile, "w") as jsonFile:
+                json.dump(info, jsonFile)
+            print(f"SKIPPING pos{pos} on gpu {gpu} due to previous errors")
+            return {'err': False, 'skipped': True}
+
     try:
-        return crop_array_inmem(*job, chan=chan, device_num=gpu)
-    except Exception:
-        print("failed")
-        pass
+        h_decon, h_reg, records, itmx = crop_array_inmem(*args)
+        print(h_decon.shape, h_decon.min(), h_decon.max())
+        os.makedirs(outfolder, exist_ok=True)
+        tf.imsave(
+            name,
+            h_decon[:, np.newaxis, :, :].astype("single"),
+            imagej=True,
+        )
+        return {'err': False, 'skipped': False, 'records': records, 'tmx': itmx}
+    except Exception as e:
+        info = {}
+        if os.path.exists(logfile):
+            with open(logfile, "r") as jsonFile:
+                info = json.load(jsonFile)
+        info['errors'] = info.get('errors', {})
+        info['errors'][f"{gpu}_{pos}"] = str(e)
+        with open(logfile, "w") as jsonFile:
+            json.dump(info, jsonFile)
+
+        return {'err': True, 'msg': str(e)}
 
 
 def crop_array(
@@ -487,17 +529,6 @@ def crop_array(
         tf.imsave(path, out[:, np.newaxis, :, :], imagej=True)
 
 
-def crop_all(exp, extent_a, extent_b, pos=0):
-    meta = get_exp_meta(exp)
-    outdir = os.path.join(exp, "_cropped", "Pos{}".format(pos))
-    os.makedirs(outdir, exist_ok=True)
-    for c in range(meta["nC"] // 2):
-        os.makedirs(os.path.join(outdir, "ch{}".format(c)), exist_ok=True)
-
-    jobs = [(exp, extent_a, extent_b, meta, t, pos, outdir) for t in range(meta["nT"])]
-    return jobs
-
-
 def starcrop(args):
     try:
         return crop_array(*args)
@@ -506,7 +537,32 @@ def starcrop(args):
         return None
 
 
-def gather_jobs(jobsdir, positions=None, timepoints=None):
+def parse_job(filepath):
+    with open(filepath, "r") as _file:
+        j = json.load(_file)
+    if "data" in j:
+        # old format
+        data = j.pop("data")
+        j.update(
+            {"exp": data[0], "extent_a": data[1], "extent_b": data[2], "pos": data[3]}
+        )
+    return j
+
+
+def crop_all(exp, extent_a, extent_b, pos=0):
+    meta = get_exp_meta(exp)
+    # outdir = os.path.join(exp, "_cropped", "Pos{}".format(pos))
+    # os.makedirs(outdir, exist_ok=True)
+    # for c in range(meta["nC"] // 2):
+    #     os.makedirs(os.path.join(outdir, "ch{}".format(c)), exist_ok=True)
+
+    jobs = [(exp, extent_a, extent_b, meta, t, pos) for t in range(meta["nT"])]
+    return jobs
+
+
+def gather_jobs(jobsdir, positions=None, timepoints=None, channels=None):
+    if isinstance(channels, int):
+        channels = [channels]
     jobs = []
     jfiles = glob(os.path.join(jobsdir, "*.json"))
     if not jfiles:
@@ -515,12 +571,20 @@ def gather_jobs(jobsdir, positions=None, timepoints=None):
         print("No .json jobs found in {}".format(jobsdir))
         return jobs
     for js in jfiles:
-        with open(js, "r") as f:
-            d = json.load(f)["data"]
-            if positions is not None:
-                if d[3] not in positions:
-                    continue
-            jobs.extend(crop_all(*d))
+        d = parse_job(js)
+        if positions is not None:
+            if d["pos"] not in positions:
+                continue
+        meta = get_exp_meta(d["exp"])
+        channels = channels or range(meta["nC"] // 2)
+        for t in range(meta["nT"]):
+            for c in channels:
+                # these will be the arguments for crop_inmem
+                # (exp, extent_a, extent_b, meta, time, pos, chan=0, device_num=0)
+                jobs.append(
+                    [d["exp"], d["extent_a"], d["extent_b"], meta, t, d["pos"], c]
+                )
+
     if timepoints is not None:
         jobs = [j for j in jobs if j[4] in timepoints]
     return jobs

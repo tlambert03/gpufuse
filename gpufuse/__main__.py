@@ -2,154 +2,111 @@ import argparse
 import os
 import sys
 
+try:
+    import gpufuse
+except ImportError:
+    PACKAGE_PARENT = ".."
+    SCRIPT_DIR = os.path.dirname(
+        os.path.realpath(os.path.join(os.getcwd(), os.path.expanduser(__file__)))
+    )
+    sys.path.append(os.path.normpath(os.path.join(SCRIPT_DIR, PACKAGE_PARENT)))
+    import gpufuse
+
+
+def is_valid_folder(parser, arg):
+    if not os.path.exists(arg):
+        parser.error("The folder %s does not exist!" % arg)
+    if not os.path.isdir(arg):
+        parser.error("%s is not a folder!" % arg)
+    return arg
+
+
+def is_valid_file(parser, arg):
+    if not os.path.exists(arg):
+        parser.error("The file %s does not exist!" % arg)
+    return arg
+
+
+def crop(args):
+    if args.execute:
+        jobsdir = os.path.join(args.folder, "_jobs")
+        if not os.path.exists(jobsdir):
+            jobsdir = input("Jobs not autodetected, enter directory: ")
+        if os.path.exists(jobsdir):
+            gpufuse.execute(jobsdir, args.p, args.t)
+        else:
+            print("exiting")
+    else:
+        gpufuse.prep_experiment(args.folder, positions=args.p, tind=args.sum)
+
+
+def fuse_in_mem(args):
+    from multiprocessing import Pool
+
+    jobs = gpufuse.crop.gather_jobs(args.folder)
+    try:
+        gpus = gpufuse.func.dev_info()
+        minmem = 9000
+        gpus = dict(filter(lambda x: int(x[1]["mem"]) > minmem, gpus.items()))
+        if len(gpus) > 1:
+            # add gpu device number to job
+            for n, job in enumerate(jobs):
+                job.append(n % len(gpus))
+    except ImportError:
+        gpus = [0]
+    with Pool(len(gpus)) as pool:
+        pool.map(gpufuse.crop.crop_array_and_write, jobs)
+
+
+
+def fuse(args):
+    spim_a_folder = os.path.join(args.folder, "SPIMA")
+    spim_b_folder = os.path.join(args.folder, "SPIMB")
+    if not os.path.exists(spim_a_folder):
+        spim_a_folder = input(
+            "Could not autodetect SPIMA folder, enter SPIMA directory: "
+        )
+    if not os.path.exists(spim_b_folder):
+        spim_b_folder = input(
+            "Could not autodetect SPIMB folder, enter SPIMB directory: "
+        )
+    assert os.path.exists(spim_a_folder) and os.path.exists(spim_b_folder), "No folder"
+
+    gpufuse.fusion_dualview_batch(
+        spim_a_folder, args.PSF_A, spim_b_folder=spim_b_folder
+    )
+
+
+def view(args):
+    import tifffile as tf
+    import matplotlib.pyplot as plt
+
+    if args.file.endswith(".tif") or args.file.endswith(".tiff"):
+        print(f"loading {args.file}")
+        im = tf.imread(args.file)
+
+    elif os.path.isdir(args.file):
+        from glob import glob
+
+        im0 = glob(os.path.join(args.file, "**", "*{:04d}*Pos0*.tif".format(args.t)))[0]
+        print("loading timepoint {}, pos {}".format(args.t, args.p))
+        im = tf.imread(im0, series=args.p)
+
+    if args.max:
+        tf.imshow(
+            im.max(0),
+            vmax=im.max() * args.contrast,
+            cmap="gray",
+            photometric="minisblack",
+        )
+    else:
+        tf.imshow(
+            im, vmax=im.max() * args.contrast, cmap="gray", photometric="minisblack"
+        )
+    plt.show()
+
 
 def main():
-    try:
-        import gpufuse
-    except ImportError:
-        PACKAGE_PARENT = ".."
-        SCRIPT_DIR = os.path.dirname(
-            os.path.realpath(os.path.join(os.getcwd(), os.path.expanduser(__file__)))
-        )
-        sys.path.append(os.path.normpath(os.path.join(SCRIPT_DIR, PACKAGE_PARENT)))
-        import gpufuse
-
-    def is_valid_folder(parser, arg):
-        if not os.path.exists(arg):
-            parser.error("The folder %s does not exist!" % arg)
-        if not os.path.isdir(arg):
-            parser.error("%s is not a folder!" % arg)
-        return arg
-
-    def is_valid_file(parser, arg):
-        if not os.path.exists(arg):
-            parser.error("The file %s does not exist!" % arg)
-        return arg
-
-    def crop(args):
-        if args.execute:
-            jobsdir = os.path.join(args.folder, "_jobs")
-            print(jobsdir)
-            if not os.path.exists(jobsdir):
-                jobsdir = input("Jobs not autodetected, enter directory: ")
-            if os.path.exists(jobsdir):
-                gpufuse.execute(jobsdir, args.p, args.t)
-            else:
-                print("exiting")
-        else:
-            gpufuse.prep_experiment(args.folder, positions=args.p, tind=args.sum)
-
-    def fuse_in_thread(job, chan, name):
-        from concurrent.futures import ProcessPoolExecutor, process
-
-        with ProcessPoolExecutor() as executor:
-            decon = executor.map(gpufuse.crop.starcrop_inmem, ((job, chan),))
-        try:
-            return list(decon)[0]
-        except process.BrokenProcessPool:
-            return None
-
-    def fuse_in_mem(args):
-        import tifffile as tf
-        import numpy as np
-        from collections import Counter
-
-        failed_positions = Counter()
-        jobs = gpufuse.crop.gather_jobs(args.folder)
-        meta = gpufuse.crop.get_exp_meta(args.folder)
-        outfolder = os.path.join(args.folder, "_decon")
-        os.makedirs(outfolder, exist_ok=True)
-
-        for job in jobs:
-            res = []
-            t = job[4]
-            pos = job[5]
-            if failed_positions[pos] > args.minfail:
-                continue
-            if args.p and pos not in args.p:
-                continue
-            if args.t and t not in args.t:
-                continue
-            if args.merge:
-                name = os.path.join(outfolder, f"p{pos}_t{t}.tif")
-                if os.path.exists(name) and not args.reprocess:
-                    print(f"skipping already processed file {name}")
-                    continue
-                for chan in range(meta["nC"] // 2):
-                    decon = fuse_in_thread(job, chan, name)
-                    if decon is not None:
-                        res.append(decon)
-                    else:
-                        failed_positions.update([pos])
-                        break
-                if len(res):
-                    tf.imsave(name, np.stack(res, 1).astype("single"), imagej=True)
-            else:
-                for chan in range(meta["nC"] // 2):
-                    name = os.path.join(outfolder, f"p{pos}_t{t}_c{chan}.tif")
-                    if os.path.exists(name) and not args.reprocess:
-                        print(f"skipping already processed file {name}")
-                        continue
-                    decon = fuse_in_thread(job, chan, name)
-                    if decon is not None:
-                        tf.imsave(
-                            name,
-                            decon[:, np.newaxis, :, :].astype("single"),
-                            imagej=True,
-                        )
-                    else:
-                        failed_positions.update([pos])
-
-    def fuse(args):
-        spim_a_folder = os.path.join(args.folder, "SPIMA")
-        spim_b_folder = os.path.join(args.folder, "SPIMB")
-        if not os.path.exists(spim_a_folder):
-            spim_a_folder = input(
-                "Could not autodetect SPIMA folder, enter SPIMA directory: "
-            )
-        if not os.path.exists(spim_b_folder):
-            spim_b_folder = input(
-                "Could not autodetect SPIMB folder, enter SPIMB directory: "
-            )
-        assert os.path.exists(spim_a_folder) and os.path.exists(
-            spim_b_folder
-        ), "No folder"
-
-        print(args.PSF_A)
-        gpufuse.fusion_dualview_batch(
-            spim_a_folder, args.PSF_A, spim_b_folder=spim_b_folder
-        )
-
-    def view(args):
-        import tifffile as tf
-        import matplotlib.pyplot as plt
-
-        if args.file.endswith(".tif") or args.file.endswith(".tiff"):
-            print(f"loading {args.file}")
-            im = tf.imread(args.file)
-
-        elif os.path.isdir(args.file):
-            from glob import glob
-
-            im0 = glob(
-                os.path.join(args.file, "**", "*{:04d}*Pos0*.tif".format(args.t))
-            )[0]
-            print("loading timepoint {}, pos {}".format(args.t, args.p))
-            im = tf.imread(im0, series=args.p)
-
-        if args.max:
-            tf.imshow(
-                im.max(0),
-                vmax=im.max() * args.contrast,
-                cmap="gray",
-                photometric="minisblack",
-            )
-        else:
-            tf.imshow(
-                im, vmax=im.max() * args.contrast, cmap="gray", photometric="minisblack"
-            )
-        plt.show()
-
     parser = argparse.ArgumentParser(description="diSPIM fusion helper")
     subparsers = parser.add_subparsers(help="sub-commands")
 

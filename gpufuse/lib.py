@@ -29,6 +29,7 @@ except OSError as e:
     LIB = None
 
 if LIB:
+    print(LIB)
     LIB.gettifinfo.restype = ctypes.c_ushort
     LIB.gettifinfo.argtypes = [ctypes.c_char_p, ctypes.c_uint * 3]
 
