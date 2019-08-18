@@ -460,6 +460,7 @@ def crop_array_and_write(args):
     try:
         h_decon, h_reg, records, itmx = crop_array_inmem(*args)
         os.makedirs(outfolder, exist_ok=True)
+        print(f"saving {name}...")
         tf.imsave(
             name,
             h_decon[:, np.newaxis, :, :].astype("single"),
@@ -470,7 +471,8 @@ def crop_array_and_write(args):
         np.savetxt(tmxname, np.array(list(itmx)), fmt='%.10f')
         return {'err': False, 'skipped': False, 'records': records, 'tmx': itmx}
     except Exception as e:
-        print(e)
+        import sys, traceback
+        traceback.print_exc(file=sys.stdout)
         info = {}
         if os.path.exists(logfile):
             with open(logfile, "r") as jsonFile:
