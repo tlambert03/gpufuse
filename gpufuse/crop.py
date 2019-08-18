@@ -456,8 +456,8 @@ def crop_array_and_write(args):
 
     logfile = os.path.join(outfolder, 'log.json')
     if os.path.exists(name):
+        info = {}
         if os.path.exists(logfile):
-            info = {}
             with open(logfile, "r") as jsonFile:
                 info = json.load(jsonFile)
         info['skipped'] = info.get('skipped', [])
