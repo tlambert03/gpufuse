@@ -56,9 +56,11 @@ def fuse_in_mem(args):
                 job.append(n % len(gpus))
     except ImportError:
         gpus = [0]
-    with concurrent.futures.ThreadPoolExecutor(max_workers=len(gpus)) as ex:
-        print(f"running jobs on {len(gpus)} gpus")
-        ex.map(crop.crop_array_and_write, jobs)
+    #with concurrent.futures.ThreadPoolExecutor(max_workers=len(gpus)) as ex:
+    for job in jobs:
+        crop.crop_array_and_write(job)
+    #    print(f"running jobs on {len(gpus)} gpus")
+    #    ex.map(crop.crop_array_and_write, jobs)
     # return futures
 
 
