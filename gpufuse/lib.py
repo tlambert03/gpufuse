@@ -32,14 +32,13 @@ except OSError as e:
 def c_error_wrapper(func):
     def method(*args):
         status = func(*args)
-        if status < 0:
+        if status != 0:
             raise RuntimeError(f'Runtime error raised in {func.__name__}')
     return method
 
 
 if LIB:
-    queryDevice = c_error_wrapper(LIB.queryDevice)
-
+    queryDevice = LIB.queryDevice
 
     LIB.gettifinfo.restype = ctypes.c_ushort
     LIB.gettifinfo.argtypes = [ctypes.c_char_p, ctypes.c_uint * 3]
@@ -51,7 +50,7 @@ if LIB:
         ctypes.c_char_p,
         ctypes.c_uint * 3,
     ]
-    readtifstack = c_error_wrapper(LIB.readtifstack)
+    readtifstack = LIB.readtifstack
 
     LIB.reg_3dcpu.restype = ctypes.c_int
     LIB.reg_3dcpu.argtypes = [

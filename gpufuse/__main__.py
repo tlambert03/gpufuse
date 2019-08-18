@@ -114,6 +114,8 @@ def view(args):
 def main():
     parser = argparse.ArgumentParser(
         'gpufuse', description="diSPIM fusion helper")
+    parser.add_argument("-Q", "--devQuery", action="store_true", help="show available devices")
+
     subparsers = parser.add_subparsers(help="sub-commands")
 
     parser_fuse = subparsers.add_parser(
@@ -238,8 +240,11 @@ def main():
     parser_view.set_defaults(func=view)
     parser.set_defaults(func=lambda x: parser.print_help(sys.stderr))
     args = parser.parse_args()
-
-    args.func(args)
+    if args.devQuery:
+        from gpufuse.func import query_device
+        query_device()
+    else:
+        args.func(args)
 
 
 if __name__ == "__main__":
