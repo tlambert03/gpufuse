@@ -19,7 +19,9 @@ tifffile_logger = logging.getLogger("tifffile")
 tifffile_logger.setLevel(logging.ERROR)
 
 POSITIONS = {x: i for i, x in enumerate("xyz")}
-JOBSDIR = "_jobs"
+__JOBSDIR__ = "_jobs"
+__DECONDIR__ = "_decon"
+__TMXDIR__ = "_tmx"
 
 
 class Selection3D:
@@ -63,7 +65,8 @@ class Selection3D:
             self.make_callback(axes),
             drawtype="box",
             useblit=False,
-            rectprops=dict(facecolor="red", edgecolor="red", alpha=0.4, fill=False),
+            rectprops=dict(facecolor="red", edgecolor="red",
+                           alpha=0.4, fill=False),
             interactive=True,
         )
         self.selectors.append((selector, axes))
@@ -140,7 +143,8 @@ def parse_dispim_meta(impath):
         # tifffile version > 2019.2.22
         if isinstance(meta, str):
             meta = tf.xml2dict(meta)["OME"]
-    im0 = meta["Image"][0] if isinstance(meta["Image"], list) else meta["Image"]
+    im0 = meta["Image"][0] if isinstance(
+        meta["Image"], list) else meta["Image"]
     out = {"channels": [], "nS": len(meta["Image"])}
     for x in "XYZCT":
         out["n" + x] = im0["Pixels"]["Size" + x]
@@ -154,7 +158,8 @@ def parse_dispim_meta(impath):
 
 def get_exp_meta(exp):
     dirs = sorted(
-        [d for d in os.listdir(exp) if not (d.startswith(".") or d.startswith("_"))]
+        [d for d in os.listdir(exp) if not (
+            d.startswith(".") or d.startswith("_"))]
     )
     try:
         im0 = sorted(glob(os.path.join(exp, dirs[0] + "/*.tif")))[0]
@@ -162,8 +167,10 @@ def get_exp_meta(exp):
         raise FileNotFoundError("No tiff files found in {}".format(exp))
     meta = parse_dispim_meta(im0)
     meta["nT"] = len(dirs)
-    meta["ind_a"] = [x for x, c in enumerate(meta["channels"]) if "RightCam" in c]
-    meta["ind_b"] = [x for x, c in enumerate(meta["channels"]) if "LeftCam" in c]
+    meta["ind_a"] = [x for x, c in enumerate(
+        meta["channels"]) if "RightCam" in c]
+    meta["ind_b"] = [x for x, c in enumerate(
+        meta["channels"]) if "LeftCam" in c]
     return meta
 
 
@@ -206,11 +213,13 @@ def load_dispim_mips(exp, tind=None, pos=0):
     # newshape = list(mip_zy.shape)
     # newshape[-1] = round(newshape[-1] * meta["dzRatio"])
     # mip_zyr = skimage.transform.resize(mip_zy, newshape)
-    mip_zyr = resize_axis(mip_zy, round(mip_zy.shape[-1] * meta["dzRatio"]), axis=-1)
+    mip_zyr = resize_axis(mip_zy, round(
+        mip_zy.shape[-1] * meta["dzRatio"]), axis=-1)
     # newshape = list(mip_xz.shape)
     # newshape[-2] = round(newshape[-2] * meta["dzRatio"])
     # mip_xzr = skimage.transform.resize(mip_xz, newshape)
-    mip_xzr = resize_axis(mip_xz, round(mip_xz.shape[-2] * meta["dzRatio"]), axis=-2)
+    mip_xzr = resize_axis(mip_xz, round(
+        mip_xz.shape[-2] * meta["dzRatio"]), axis=-2)
 
     patha, pathb = [None] * 3, [None] * 3
     patha[0], pathb[0] = mip_xy
@@ -226,15 +235,20 @@ def select_volume(patha, pathb, initial_coords=None, contrast=0.8, controller=No
     ax3 = fig.add_subplot(2, 2, 3, adjustable="box")
     ax4 = fig.add_subplot(2, 2, 4, sharey=ax1)
     plt.setp(ax2.get_yaxis(), visible=False)
-    ax1.imshow(patha[0], aspect="equal", vmax=patha[0].max() * contrast, cmap="gray")
+    ax1.imshow(patha[0], aspect="equal",
+               vmax=patha[0].max() * contrast, cmap="gray")
     ax2.imshow(
         np.fliplr(patha[2]), aspect="equal", vmax=patha[2].max() * contrast, cmap="gray"
     )
-    ax3.imshow(pathb[0], aspect="equal", vmax=pathb[0].max() * contrast, cmap="gray")
-    ax4.imshow(pathb[2], aspect="equal", vmax=pathb[2].max() * contrast, cmap="gray")
+    ax3.imshow(pathb[0], aspect="equal",
+               vmax=pathb[0].max() * contrast, cmap="gray")
+    ax4.imshow(pathb[2], aspect="equal",
+               vmax=pathb[2].max() * contrast, cmap="gray")
     plt.tight_layout()
-    s1 = Selection3D(coords=initial_coords[0] if initial_coords is not None else None)
-    s2 = Selection3D(coords=initial_coords[1] if initial_coords is not None else None)
+    s1 = Selection3D(
+        coords=initial_coords[0] if initial_coords is not None else None)
+    s2 = Selection3D(
+        coords=initial_coords[1] if initial_coords is not None else None)
     s1.add_selector(ax1, "xy")
     s1.add_selector(ax2, "zy")
     s2.add_selector(ax3, "xy")
@@ -305,7 +319,7 @@ def prep_experiment(exp, positions=None, tind=None):
     except FileNotFoundError as e:
         print(e)
         return
-    outdir = os.path.join(exp, JOBSDIR)
+    outdir = os.path.join(exp, __JOBSDIR__)
     os.makedirs(outdir, exist_ok=True)
 
     controller = Controller(positions or range(meta["nS"]))
@@ -356,7 +370,8 @@ def crop_array_inmem(
     from .func import fusion_dualview
 
     im0 = glob(os.path.join(exp, "**", "*{:04d}*Pos0*.tif".format(time)))[0]
-    print(f"loading file {os.path.basename(im0)}, pos {pos}, t: {time}, c: {chan}")
+    print(
+        f"loading file {os.path.basename(im0)}, pos {pos}, t: {time}, c: {chan}")
     maxn = meta["nC"] * meta["nZ"]
     keys = list(range(meta["ind_a"][chan], maxn, meta["nC"]))
     keys.extend(list(range(meta["ind_b"][chan], maxn, meta["nC"])))
@@ -367,8 +382,10 @@ def crop_array_inmem(
     slc_b_x, slc_b_y, slc_b_z = extent_b
     # weird reversing is due to the way the slices were picked in select_volume()
     slc_a_z = [None, None]
-    slc_a_z[0] = round((meta["dzRatio"] * meta["nZ"] - _slc_a_z[1]) / meta["dzRatio"])
-    slc_a_z[1] = round((meta["dzRatio"] * meta["nZ"] - _slc_a_z[0]) / meta["dzRatio"])
+    slc_a_z[0] = round((meta["dzRatio"] * meta["nZ"] -
+                        _slc_a_z[1]) / meta["dzRatio"])
+    slc_a_z[1] = round((meta["dzRatio"] * meta["nZ"] -
+                        _slc_a_z[0]) / meta["dzRatio"])
     slc_b_z = [round(i / meta["dzRatio"]) for i in slc_b_z]
     idx_a = 0 if meta["ind_a"][chan] < meta["ind_b"][chan] else 1
     idx_b = 1 if idx_a == 0 else 0
@@ -382,12 +399,26 @@ def crop_array_inmem(
     im_b -= background
     im_a[im_a < 0] = 0
     im_b[im_b < 0] = 0
+
+    # look for existing tranformation matrix from same position
+    tmx_mode = 0
+    itmx = None
+    try:
+        tmxfile = glob(os.path.join(exp, __TMXDIR__, f"p{pos}*.txt"))[0]
+        itmx = np.genfromtxt(tmxfile)
+        tmx_mode = 1
+        print('found existing tmx file')
+    except Exception:
+        pass
+
     return fusion_dualview(
         im_a,
         im_b,
         pixel_size1=[meta["dX"], meta["dX"], meta["dZ"]],
         rot_mode=1,
         device_num=device_num,
+        itmx=itmx,
+        tmx_mode=tmx_mode,
     )
 
 
@@ -396,15 +427,20 @@ def crop_array_and_write(args):
     exp, extent_a, extent_b, meta, time, pos, chan, *rest = args
     gpu = args[7] if len(args) > 7 else 0
 
-    outfolder = os.path.join(exp, "_decon")
-    name = os.path.join(outfolder, f"p{pos}_t{time}_c{chan}.tif")
+    outfolder = os.path.join(exp, __DECONDIR__)
+    tmxfolder = os.path.join(exp, __TMXDIR__)
+
+    code = f"p{pos}_t{time}_c{chan}"
+    name = os.path.join(outfolder, f"{code}.tif")
 
     logfile = os.path.join(outfolder, 'log.json')
     if os.path.exists(name):
-        with open(logfile, "r") as jsonFile:
-            info = json.load(jsonFile)
+        if os.path.exists(logfile):
+            info = {}
+            with open(logfile, "r") as jsonFile:
+                info = json.load(jsonFile)
         info['skipped'] = info.get('skipped', [])
-        info['skipped'].append((f'p{pos}_t{time}_c{chan}', 'exists'))
+        info['skipped'].append((code, 'already exists'))
         with open(logfile, "w") as jsonFile:
             json.dump(info, jsonFile)
         print(f"SKIPPING pos{pos} t{time} c{chan} - already exists")
@@ -412,31 +448,35 @@ def crop_array_and_write(args):
     if os.path.exists(logfile):
         with open(logfile, "r") as jsonFile:
             info = json.load(jsonFile)
-        if 'errors' in info and f"{gpu}_{pos}" in info['errors']:
+        if 'errors' in info and f"gpu{gpu}_pos{pos}" in info['errors']:
             info['skipped'] = info.get('skipped', [])
-            info['skipped'].append((f'p{pos}_t{time}_c{chan}', 'previous error'))
+            info['skipped'].append(
+                (code, 'previous error'))
             with open(logfile, "w") as jsonFile:
                 json.dump(info, jsonFile)
-            print(f"SKIPPING pos{pos} on gpu {gpu} due to previous errors")
+            print(f"SKIPPING pos{pos} on gpu {gpu} - previous errors")
             return {'err': False, 'skipped': True}
 
     try:
         h_decon, h_reg, records, itmx = crop_array_inmem(*args)
-        print(h_decon.shape, h_decon.min(), h_decon.max())
         os.makedirs(outfolder, exist_ok=True)
         tf.imsave(
             name,
             h_decon[:, np.newaxis, :, :].astype("single"),
             imagej=True,
         )
+        os.makedirs(tmxfolder, exist_ok=True)
+        tmxname = os.path.join(tmxfolder, f"{code}.txt")
+        np.savetxt(tmxname, np.array(list(itmx)), fmt='%.10f')
         return {'err': False, 'skipped': False, 'records': records, 'tmx': itmx}
     except Exception as e:
+        print(e)
         info = {}
         if os.path.exists(logfile):
             with open(logfile, "r") as jsonFile:
                 info = json.load(jsonFile)
         info['errors'] = info.get('errors', {})
-        info['errors'][f"{gpu}_{pos}"] = str(e)
+        info['errors'][f"gpu{gpu}_pos{pos}"] = str(e)
         with open(logfile, "w") as jsonFile:
             json.dump(info, jsonFile)
 
@@ -544,7 +584,8 @@ def parse_job(filepath):
         # old format
         data = j.pop("data")
         j.update(
-            {"exp": data[0], "extent_a": data[1], "extent_b": data[2], "pos": data[3]}
+            {"exp": data[0], "extent_a": data[1],
+                "extent_b": data[2], "pos": data[3]}
         )
     return j
 
@@ -566,7 +607,7 @@ def gather_jobs(jobsdir, positions=None, timepoints=None, channels=None):
     jobs = []
     jfiles = glob(os.path.join(jobsdir, "*.json"))
     if not jfiles:
-        jfiles = glob(os.path.join(jobsdir, JOBSDIR, "*.json"))
+        jfiles = glob(os.path.join(jobsdir, __JOBSDIR__, "*.json"))
     if not jfiles:
         print("No .json jobs found in {}".format(jobsdir))
         return jobs
@@ -594,7 +635,8 @@ def execute(jobsdir, positions=None, timepoints=None, client=None):
     jobs = gather_jobs(jobsdir, positions, timepoints)
     if client is None:
         client = Pool()
-    assert hasattr(client, "map"), "provided client does not implement a map function"
+    assert hasattr(
+        client, "map"), "provided client does not implement a map function"
     return client.map(starcrop, jobs)
 
 
