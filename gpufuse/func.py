@@ -5,12 +5,12 @@ import warnings
 import os
 import numpy as np
 
-from .lib import LIB
+from . import lib
 
 
 def query_device():
     """Print GPU info to console."""
-    LIB.queryDevice()
+    lib.queryDevice()
 
 
 def dev_info():
@@ -19,7 +19,7 @@ def dev_info():
     from wurlitzer import pipes
 
     with pipes() as (out, err):
-        LIB.queryDevice()
+        lib.queryDevice()
     info = out.read()
     devs = {}
     for dev in info.strip().split("\n\n"):
@@ -50,7 +50,7 @@ def get_tif_info(fname):
             list: [X, Y, Z] dimensions of tiff
     """
     size = (ctypes.c_uint * 3)()
-    bit_per_sample = LIB.gettifinfo(fname.encode(), size)
+    bit_per_sample = lib.gettifinfo(fname.encode(), size)
     return bit_per_sample, list(size)
 
 
@@ -67,7 +67,7 @@ def read_tif_stack(fname):
     size = (ctypes.c_uint * 3)()
     bps, shape = get_tif_info(fname)
     result = np.empty(tuple(reversed(shape)), dtype=np.float32)
-    LIB.readtifstack(result, fname.encode(), size)
+    lib.readtifstack(result, fname.encode(), size)
     return result.astype(np.dtype("uint%d" % bps))
 
 
@@ -138,15 +138,17 @@ def reg_3dgpu(
     if not 0 <= i_tmx <= 3:
         raise ValueError("i_tmx must be between 0-3")
     if nptrans:
-        im_a = np.ascontiguousarray(np.transpose(im_a, (2, 1, 0)), dtype=np.float32)
-        im_b = np.ascontiguousarray(np.transpose(im_b, (2, 1, 0)), dtype=np.float32)
+        im_a = np.ascontiguousarray(np.transpose(
+            im_a, (2, 1, 0)), dtype=np.float32)
+        im_b = np.ascontiguousarray(np.transpose(
+            im_b, (2, 1, 0)), dtype=np.float32)
     h_reg_b = np.empty_like(im_a, dtype=np.float32)
     if tmx is None:
         tmx = np.eye(4)
     tmx = (ctypes.c_float * 16)(*tmx.ravel())
 
     h_records = (ctypes.c_float * 11)(0.0)
-    status = LIB.reg_3dgpu(
+    status = lib.reg_3dgpu(
         h_reg_b,
         tmx,
         im_a.astype(np.float32),
@@ -234,15 +236,17 @@ def reg_3dcpu(
     if not 0 <= i_tmx <= 3:
         raise ValueError("i_tmx must be between 0-3")
     if nptrans:
-        im_a = np.ascontiguousarray(np.transpose(im_a, (2, 1, 0)), dtype=np.float32)
-        im_b = np.ascontiguousarray(np.transpose(im_b, (2, 1, 0)), dtype=np.float32)
+        im_a = np.ascontiguousarray(np.transpose(
+            im_a, (2, 1, 0)), dtype=np.float32)
+        im_b = np.ascontiguousarray(np.transpose(
+            im_b, (2, 1, 0)), dtype=np.float32)
     h_reg_b = np.empty_like(im_a, dtype=np.float32)
     if tmx is None:
         tmx = np.eye(4)
     tmx = (ctypes.c_float * 16)(*tmx.ravel())
 
     h_records = (ctypes.c_float * 11)(0.0)
-    status = LIB.reg_3dcpu(
+    status = lib.reg_3dcpu(
         h_reg_b,
         tmx,
         im_a.astype(np.float32),
@@ -320,7 +324,7 @@ def decon_dualview(
         unmatched = False
         psf_a_bp = psf_a
         psf_b_bp = psf_b
-    status = LIB.decon_dualview(
+    status = lib.decon_dualview(
         h_decon,
         im_a.astype(np.float32),
         im_b.astype(np.float32),
@@ -378,7 +382,7 @@ def decon_singleview(im, psf, psf_bp=None, iters=10, device_num=0, gpu_mem_mode=
     else:
         unmatched = False
 
-    status = LIB.decon_singleview(
+    status = lib.decon_singleview(
         h_decon,
         im.astype(np.float32),
         # reversed shape because numpy is ZYX, and c++ expects XYZ
@@ -428,7 +432,14 @@ def fusion_dualview(
     if not 0 <= tmx_mode <= 3:
         raise ValueError("tmx_mode must be between 0-3")
 
-    if tmx_mode != 1 or itmx is None:
+    if tmx_mode == 1:
+        if itmx is None:
+            raise ValueError('itmx must be provided when tmx_mode == 1')
+        else:
+            strayy = np.array2string(itmx.reshape(
+                (4, 4)), precision=3, suppress_small=True)
+            print('using initial tmx:\n{}'.format(strayy))
+    elif itmx is None:
         itmx = np.eye(4)
     itmx = (ctypes.c_float * 16)(*itmx.ravel())
 
@@ -463,8 +474,8 @@ def fusion_dualview(
     h_decon = np.empty(outshape, dtype=np.float32)
     h_reg = np.empty_like(h_decon, dtype=np.float32)
     records = (ctypes.c_float * 22)(0)
-    print("run")
-    LIB.fusion_dualview(
+
+    lib.fusion_dualview(
         h_decon,
         h_reg,
         itmx,
@@ -490,7 +501,8 @@ def fusion_dualview(
         psf_a_bp.astype(np.float32),
         psf_b_bp.astype(np.float32),
     )
-    print(h_decon.min(), h_decon.max(), h_reg.min(), h_reg.max(), im_a.max())
+    if h_decon.max() == 0 and h_decon.min() == 0:
+        raise RuntimeError('fusion_dualview returned an empty array')
     return h_decon, h_reg, records, itmx
 
 
@@ -651,7 +663,8 @@ def fusion_dualview_batch(
         nend = tot_n - 1
     if nend > (tot_n - 1):
         raise ValueError(
-            "nend is greater than the number of images in {}".format(spim_a_folder)
+            "nend is greater than the number of images in {}".format(
+                spim_a_folder)
         )
 
     pixel_size1 = fetch_pixelsize(spim_a_folder)
@@ -661,7 +674,8 @@ def fusion_dualview_batch(
         itmx = np.eye(4)
     itmx = (ctypes.c_float * 16)(*itmx.ravel())
 
-    saves = (ctypes.c_uint * 8)(save_inter, *save_reg, *save_mips, *save_3d_mips)
+    saves = (ctypes.c_uint * 8)(save_inter, *
+                                save_reg, *save_mips, *save_3d_mips)
     records = (ctypes.c_float * 22)(0)
 
     if psf_a_bp and psf_b_bp and os.path.exists(psf_a_bp) and os.path.exists(psf_b_bp):
@@ -671,7 +685,7 @@ def fusion_dualview_batch(
         psf_a_bp = psf_a
         psf_b_bp = psf_b
 
-    LIB.fusion_dualview_batch(
+    lib.fusion_dualview_batch(
         out_path.encode(),
         spim_a_folder.encode(),
         spim_b_folder.encode(),

@@ -1,9 +1,16 @@
-from .func import reg_3dgpu, decon_dualview, decon_singleview, fusion_dualview_batch
+from .func import (
+    reg_3dgpu,
+    decon_dualview,
+    decon_singleview,
+    fusion_dualview_batch,
+    query_device
+)
 from .crop import prep_experiment, execute
 from .util import fuse, fuse_file
 
 __all__ = [
     "reg_3dgpu",
+    "query_device",
     "decon_dualview",
     "decon_singleview",
     "fuse",

@@ -2,15 +2,12 @@ import argparse
 import os
 import sys
 
-try:
-    import gpufuse
-except ImportError:
-    PACKAGE_PARENT = ".."
-    SCRIPT_DIR = os.path.dirname(
-        os.path.realpath(os.path.join(os.getcwd(), os.path.expanduser(__file__)))
-    )
-    sys.path.append(os.path.normpath(os.path.join(SCRIPT_DIR, PACKAGE_PARENT)))
-    import gpufuse
+PACKAGE_PARENT = ".."
+SCRIPT_DIR = os.path.dirname(
+    os.path.realpath(os.path.join(
+        os.getcwd(), os.path.expanduser(__file__)))
+)
+sys.path.append(os.path.normpath(os.path.join(SCRIPT_DIR, PACKAGE_PARENT)))
 
 
 def is_valid_folder(parser, arg):
@@ -33,20 +30,25 @@ def crop(args):
         if not os.path.exists(jobsdir):
             jobsdir = input("Jobs not autodetected, enter directory: ")
         if os.path.exists(jobsdir):
+            from gpufuse import execute
             gpufuse.execute(jobsdir, args.p, args.t)
         else:
             print("exiting")
     else:
-        gpufuse.prep_experiment(args.folder, positions=args.p, tind=args.sum)
+        from gpufuse.crop import prep_experiment
+        prep_experiment(args.folder, positions=args.p, tind=args.sum)
 
 
 def fuse_in_mem(args):
-    from multiprocessing import Pool
+    import concurrent.futures
+    from gpufuse import crop
 
-    jobs = gpufuse.crop.gather_jobs(args.folder)
+    jobs = crop.gather_jobs(args.folder)
     try:
-        gpus = gpufuse.func.dev_info()
-        minmem = 9000
+        raise ImportError()
+        from gpufuse.func import dev_info
+        gpus = dev_info()
+        minmem = 8500
         gpus = dict(filter(lambda x: int(x[1]["mem"]) > minmem, gpus.items()))
         if len(gpus) > 1:
             # add gpu device number to job
@@ -54,9 +56,9 @@ def fuse_in_mem(args):
                 job.append(n % len(gpus))
     except ImportError:
         gpus = [0]
-    with Pool(len(gpus)) as pool:
-        pool.map(gpufuse.crop.crop_array_and_write, jobs)
-
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(gpus)) as ex:
+        ex.map(crop.crop_array_and_write, jobs)
+    # return futures
 
 
 def fuse(args):
@@ -70,7 +72,8 @@ def fuse(args):
         spim_b_folder = input(
             "Could not autodetect SPIMB folder, enter SPIMB directory: "
         )
-    assert os.path.exists(spim_a_folder) and os.path.exists(spim_b_folder), "No folder"
+    assert os.path.exists(spim_a_folder) and os.path.exists(
+        spim_b_folder), "No folder"
 
     gpufuse.fusion_dualview_batch(
         spim_a_folder, args.PSF_A, spim_b_folder=spim_b_folder
@@ -88,7 +91,8 @@ def view(args):
     elif os.path.isdir(args.file):
         from glob import glob
 
-        im0 = glob(os.path.join(args.file, "**", "*{:04d}*Pos0*.tif".format(args.t)))[0]
+        im0 = glob(os.path.join(args.file, "**",
+                                "*{:04d}*Pos0*.tif".format(args.t)))[0]
         print("loading timepoint {}, pos {}".format(args.t, args.p))
         im = tf.imread(im0, series=args.p)
 
@@ -107,10 +111,12 @@ def view(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="diSPIM fusion helper")
+    parser = argparse.ArgumentParser(
+        'gpufuse', description="diSPIM fusion helper")
     subparsers = parser.add_subparsers(help="sub-commands")
 
-    parser_fuse = subparsers.add_parser("fuse", help="fuse prepared SPIMA/B folders")
+    parser_fuse = subparsers.add_parser(
+        "fuse", help="fuse prepared SPIMA/B folders")
     parser_fuse.add_argument(
         "folder",
         help="top level folder, containing SPIMA & SPIMB folders",
@@ -150,11 +156,12 @@ def main():
         "--minfail",
         metavar="minfail",
         type=int,
-        default=1,
+        default=2,
         help="minimum number of failures before ignoring a position",
     )
 
-    parser_crop = subparsers.add_parser("crop", help="crop OME-formatted dispim series")
+    parser_crop = subparsers.add_parser(
+        "crop", help="crop OME-formatted dispim series")
     parser_crop.add_argument(
         "folder",
         help="experiment folder with multiple timepoints",
@@ -187,7 +194,8 @@ def main():
         help="time indices to sum when cropping, negative indices are relative to last timepoint",
     )
 
-    parser_view = subparsers.add_parser("view", help="View tiff file or experiment")
+    parser_view = subparsers.add_parser(
+        "view", help="View tiff file or experiment")
     parser_view.add_argument(
         "file",
         help="experiment file or folder with multiple timepoints",

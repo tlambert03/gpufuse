@@ -28,10 +28,22 @@ except OSError as e:
     print("Could not load gpufuse shared library: {}".format(e))
     LIB = None
 
+
+def c_error_wrapper(func):
+    def method(*args):
+        status = func(*args)
+        if status < 0:
+            raise RuntimeError(f'Runtime error raised in {func.__name__}')
+    return method
+
+
 if LIB:
-    print(LIB)
+    queryDevice = c_error_wrapper(LIB.queryDevice)
+
+
     LIB.gettifinfo.restype = ctypes.c_ushort
     LIB.gettifinfo.argtypes = [ctypes.c_char_p, ctypes.c_uint * 3]
+    gettifinfo = c_error_wrapper(LIB.gettifinfo)
 
     LIB.readtifstack.restype = ctypes.c_void_p
     LIB.readtifstack.argtypes = [
@@ -39,6 +51,7 @@ if LIB:
         ctypes.c_char_p,
         ctypes.c_uint * 3,
     ]
+    readtifstack = c_error_wrapper(LIB.readtifstack)
 
     LIB.reg_3dcpu.restype = ctypes.c_int
     LIB.reg_3dcpu.argtypes = [
@@ -55,6 +68,8 @@ if LIB:
         ctypes.c_int,  # int subBgTrigger
         (ctypes.c_float * 11),  # float *regRecords
     ]
+    reg_3dcpu = c_error_wrapper(LIB.reg_3dcpu)
+
 
     LIB.reg_3dgpu.restype = ctypes.c_int
     LIB.reg_3dgpu.argtypes = [
@@ -108,6 +123,8 @@ if LIB:
         #             total sub iterations
         (ctypes.c_float * 11),
     ]
+    reg_3dgpu = c_error_wrapper(LIB.reg_3dgpu)
+
 
     LIB.decon_dualview.restype = ctypes.c_int
     LIB.decon_dualview.argtypes = [
@@ -151,6 +168,8 @@ if LIB:
         # float *h_psf_bp2: unmatched back projector corresponding to h_psf2
         np.ctypeslib.ndpointer(ctypes.c_float, flags="C_CONTIGUOUS"),
     ]
+    decon_dualview = c_error_wrapper(LIB.decon_dualview)
+
 
     LIB.decon_singleview.restype = ctypes.c_int
     LIB.decon_singleview.argtypes = [
@@ -166,6 +185,7 @@ if LIB:
         ctypes.c_bool,  # bool flagUnmatch
         np.ctypeslib.ndpointer(ctypes.c_float, flags="C_CONTIGUOUS"),  # float *h_psf_bp
     ]
+    decon_singleview = c_error_wrapper(LIB.decon_singleview)
 
     # 3D registration and joint RL deconvolution with GPU implementation,
     # compatible with unmatched back projector.
@@ -200,6 +220,7 @@ if LIB:
             ctypes.c_float, flags="C_CONTIGUOUS"
         ),  # float *h_psf_bp2
     ]
+    fusion_dualview = c_error_wrapper(LIB.fusion_dualview)
 
     # 3D registration and joint RL deconvolution with GPU implementation,
     # compatible with unmatched back projector. Processing for time-sequence images
@@ -290,6 +311,7 @@ if LIB:
         # char *filePSF_bp2: unmatched back projector correspoånding to h_psf2
         ctypes.c_char_p,
     ]
+    fusion_dualview_batch = c_error_wrapper(LIB.fusion_dualview_batch)
 
     # Fig 1.  Folder convention for organizing multicolor datasets when using
     # fusion_dualview_batch” function. The “xxx ( )” indicates the name for the folders.
