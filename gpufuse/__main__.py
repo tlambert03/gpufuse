@@ -43,7 +43,7 @@ def fuse_in_mem(args):
     import concurrent.futures
     from gpufuse import crop
 
-    jobs = crop.gather_jobs(args.folder)
+    jobs = crop.gather_jobs(args.folder, positions=args.p, timepoints=args.t, channels=args.c)
     try:
         # raise ImportError()
         from gpufuse.func import dev_info
@@ -144,14 +144,21 @@ def main():
         metavar="positions",
         type=int,
         nargs="+",
-        help="specific positions to process, sep by spaces",
+        help="specific positions to process (zero indexed), sep by spaces",
     )
     parser_fuse.add_argument(
         "-t",
         metavar="timepoints",
         type=int,
         nargs="+",
-        help="specific timepoints to process, sep by spaces",
+        help="specific timepoints to process (zero indexed), sep by spaces",
+    )
+    parser_fuse.add_argument(
+        "-c",
+        metavar="channels",
+        type=int,
+        nargs="+",
+        help="specific channels to process (zero indexed), sep by spaces",
     )
     parser_fuse.add_argument(
         "--minfail",
