@@ -3,6 +3,7 @@ import logging
 import os
 from glob import glob
 from multiprocessing.pool import Pool
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -422,6 +423,26 @@ def crop_array_inmem(
     )
 
 
+def with_lock(func):
+    def wrapper(args):
+        exp, extent_a, extent_b, meta, time, pos, chan, *rest = args
+        code = f"p{pos}_t{time}_c{chan}"
+        outfolder = os.path.join(exp, __DECONDIR__)
+        lockfile = os.path.join(outfolder, f'.{code}.lock')
+        if not os.path.exists(lockfile):
+            Path(lockfile).touch()
+            try:
+                val = func(args)
+            except Exception as e:
+                os.remove(lockfile)
+                raise e
+            else:
+                os.remove(lockfile)
+                return val
+    return wrapper
+
+
+@with_lock
 def crop_array_and_write(args):
     # meant for parallel execution
     exp, extent_a, extent_b, meta, time, pos, chan, *rest = args
@@ -471,7 +492,8 @@ def crop_array_and_write(args):
         np.savetxt(tmxname, np.array(list(itmx)), fmt='%.10f')
         return {'err': False, 'skipped': False, 'records': records, 'tmx': itmx}
     except Exception as e:
-        import sys, traceback
+        import sys
+        import traceback
         traceback.print_exc(file=sys.stdout)
         info = {}
         if os.path.exists(logfile):
