@@ -45,7 +45,7 @@ def fuse_in_mem(args):
 
     jobs = crop.gather_jobs(args.folder, positions=args.p, timepoints=args.t, channels=args.c)
     try:
-        # raise ImportError()
+        raise ImportError()
         from gpufuse.func import dev_info
         gpus = dev_info()
         minmem = 8500
