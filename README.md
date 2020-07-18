@@ -1,5 +1,6 @@
 # gpufuse
-Python wrapper for Min Guo's CUDA-based dual-view RL fusion 
+Python wrapper for Min Guo's CUDA-based dual-view RL fusion:
+https://github.com/eguomin/microImageLib
 
 ```python
 
